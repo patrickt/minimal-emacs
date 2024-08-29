@@ -3,9 +3,16 @@
 (push '(fullscreen . maximized) default-frame-alist)
 
 (require 'package)
+;; TODO: specify these with priority so as to avoid :pins everywhere
 (push '("melpa" . "https://melpa.org/packages/") package-archives)
 (push '("melpa-stable" . "https://stable.melpa.org/packages/") package-archives)
 (push '("nongnu" . "https://elpa.nongnu.org/nongnu/") package-archives)
+
+(setq package-archive-priorities
+      '(("melpa-stable" . 100)
+        ("gnu" . 50)
+        ("nongnu" . 50)
+        ("melpa" . 0)))
 
 (setq-default use-package-enable-imenu-support t) ; must be set before loading
 (require 'use-package)
@@ -72,19 +79,44 @@ non-whitespace character on the line."
   (insert ";")
   (newline-and-indent))
 
+(defun pt/project-relative-file-name (include-prefix)
+  "Return the project-relative filename, or the full path if INCLUDE-PREFIX is t."
+  (letrec
+      ((fullname (if (equal major-mode 'dired-mode) default-directory (buffer-file-name)))
+       (root (project-root (project-current)))
+       (relname (if fullname (file-relative-name fullname root) fullname))
+       (should-strip (and root (not include-prefix))))
+    (if should-strip relname fullname)))
+
+(defun pt/copy-file-name-to-kill-ring (do-not-strip-prefix)
+  "Copy the current buffer file name to the clipboard. The path will be relative to the project's root directory, if set. Invoking with a prefix argument copies the full path."
+  (interactive "P")
+  (let
+      ((filename (pt/project-relative-file-name do-not-strip-prefix)))
+    (kill-new filename)
+    (message "Copied buffer file name '%s' to the kill ring." filename)))
+
+(defun pt/indent ()
+  (interactive)
+  (indent-rigidly (point-at-bol) (point-at-eol) standard-indent))
+
+(defun pt/dedent ()
+  (interactive)
+  (indent-rigidly (point-at-bol) (point-at-eol) (- standard-indent)))
+
 (defun display-startup-echo-area-message ()
   "Override the normally tedious startup message."
   (message "Welcome back."))
 
 (use-package emacs
-  :hook (compilation-mode . visual-line-mode)
-  :hook (prog-mode . goto-address-prog-mode)
-  :hook (compilation-filter . ansi-color-compilation-filter)
-  :hook (before-save . delete-trailing-whitespace)
+  :hook ((compilation-mode . visual-line-mode)
+         (prog-mode . goto-address-prog-mode)
+         (before-save . delete-trailing-whitespace))
   :bind (("C-;" . execute-extended-command)
 	 ("C-c ;" . execute-extended-command)
 	 ("C-c ." . completion-at-point)
 	 ("C-a" . pt/beginning-of-line)
+         ("C-c p" . pt/copy-file-name-to-kill-ring)
 	 ("C-c u" . duplicate-dwim)
          ("C-c m" . project-compile)
          ("C-x f" . project-find-file)
@@ -96,11 +128,13 @@ non-whitespace character on the line."
 	 ("s-/" . comment-dwim)
          ("s-<return>" . pt/eol-then-newline)
          ("S-s-<return>" . pt/eol-semicolon-then-newline)
+         ("s-[" . pt/dedent)
+         ("s-]" . pt/indent)
          ("C-c f" . project-find-file)
 	 ("s-p" . project-find-file)
          ("s-w" . kill-this-buffer)
-	 :map minibuffer-mode-map
-	 ("<TAB>" . minibuffer-complete))
+         :map minibuffer-mode-map
+         ("<TAB>" . minibuffer-complete))
   :custom
   (abbrev-suggest t) ; Useful reminder
   (auto-revert-avoid-polling t) ; use kqueue on macoS
@@ -138,7 +172,8 @@ non-whitespace character on the line."
   (save-interprogram-paste-before-kill t) ; preserve kill ring better
   (save-some-buffers-default-predicate 'save-some-buffers-root) ; don't ask me to save files outside of the project
   (sentence-end-double-space nil) ; lol
-  (sh-basic-offset 2 sh-basic-indentation 2) ; easy there 
+  (sh-basic-offset 2) ; easy there
+  (standard-indent 2) ; four is for the birds
   (switch-to-buffer-obey-display-actions t)
   (tab-always-indent 'complete) ; let tab complete
   (truncate-string-ellipsis "…") ; shorter
@@ -158,6 +193,11 @@ non-whitespace character on the line."
   (pixel-scroll-precision-mode) ; More beautiful scrolling
   (tooltip-mode -1) ; just no
   )
+
+(load-theme 'modus-vivendi)
+
+(use-package ansi-color
+  :hook (compilation-filter . ansi-color-compilation-filter))
 
 (setq-default fill-column 135) ; it's not 1975 anymore, we have wide screens
 
@@ -223,11 +263,9 @@ If the new path's directories does not exist, create them."
   :pin manual
   :config (savehist-mode))
 
-(use-package unfill
-  :pin melpa-stable)
+(use-package unfill)
 
 (use-package rainbow-delimiters
-  :pin melpa-stable
   :hook (prog-mode . rainbow-delimiters-mode))
 
 (use-package which-key
@@ -240,6 +278,9 @@ If the new path's directories does not exist, create them."
 
 (setq dired-kill-when-opening-new-dired-buffer t)
 
+(use-package dumb-jump
+  :bind ("C-c J" . dumb-jump-go))
+
 (use-package xref
   :pin gnu
   :custom (xref-auto-jump-to-first-xref t)
@@ -247,14 +288,13 @@ If the new path's directories does not exist, create them."
          ("C-<down-mouse-1>" . #'xref-find-definitions)
          ("C-S-<down-mouse-1>" . #'xref-find-references)
          ("C-<down-mouse-2>" . #'xref-go-back)
-         ("s-[" . #'xref-go-back)
-         ("s-]" . #'xref-go-forward)))
+         ("M-[" . #'xref-go-back)
+         ("M-]" . #'xref-go-forward)))
 
 ;;; Completion/UI
 
 ;; The default modeline is underrated but doom-modeline is better about paths
 (use-package doom-modeline
-  :pin melpa-stable
   :custom
   (doom-modeline-hud nil)
   (doom-modeline-vcs-max-length 200)
@@ -264,7 +304,6 @@ If the new path's directories does not exist, create them."
 
 ;; Best completion package
 (use-package vertico
-  :pin melpa-stable
   :bind (:map vertico-map
               ("'"           . vertico-quick-exit)
               ("C-c '"       . vertico-quick-insert)
@@ -275,12 +314,10 @@ If the new path's directories does not exist, create them."
 
 ;; Informative minibuffer data
 (use-package marginalia
-  :pin melpa-stable
   :config (marginalia-mode))
 
 ;; Inline completion is good
 (use-package corfu
-  :pin melpa-stable
   :hook (corfu-mode . corfu-popupinfo-mode)
   :bind (:map corfu-map
               ("'" . corfu-quick-insert)
@@ -293,30 +330,24 @@ If the new path's directories does not exist, create them."
   :config
   (global-corfu-mode))
 
-(use-package nerd-icons
-  :pin melpa-stable)
+(use-package nerd-icons)
 
 (use-package nerd-icons-dired
-  :pin melpa
   :after nerd-icons
   :hook (dired-mode . nerd-icons-dired-mode))
 
 (use-package nerd-icons-completion
-  :pin melpa
   :after (nerd-icons marginalia)
   :hook (marginalia-mode . nerd-icons-completion-marginalia-setup)
   :config (nerd-icons-completion-mode))
 
 (use-package nerd-icons-corfu
-  :pin melpa-stable
   :after (nerd-icons corfu)
   :custom
   (corfu-margin-formatters '(nerd-icons-corfu-formatter)))
 
-
 ;; Richer data source for corfu
 (use-package cape
-  :pin melpa-stable
   :bind
   ("M-/" . cape-prefix-map)
   :config
@@ -329,7 +360,6 @@ If the new path's directories does not exist, create them."
 
 ;; find-and-replace is so crappy otherwise
 (use-package visual-regexp
-  :pin melpa-stable
   :bind (([remap query-replace] . vr/replace)
          ("C-c R" . vr/replace)))
 
@@ -337,7 +367,6 @@ If the new path's directories does not exist, create them."
 
 ;; probably the best package
 (use-package embark
-  :pin melpa-stable
   :bind (("C-c e" . embark-act)
          ("C-h b" . embark-bindings))
   :custom
@@ -347,7 +376,6 @@ If the new path's directories does not exist, create them."
 ;; Consult has a zillion things; I wish it was smaller, but what it does
 ;; it does well, and it's smaller than Helm.
 (use-package consult
-  :pin melpa-stable
   :hook (completion-list-mode . consult-preview-at-point-mode)
   :config
   (defun pt/consult-complete ()
@@ -371,24 +399,20 @@ If the new path's directories does not exist, create them."
 
 ;; Needed for the above
 (use-package embark-consult
-  :after (embark consult)
-  :pin melpa-stable)
+  :after (embark consult))
 
 ;; remembering past inputs costs nothing and is user-friendly
 (use-package prescient
-  :pin melpa-stable
   :config (prescient-persist-mode)
   :custom
   (prescient-sort-full-matches-first t))
 
 (use-package vertico-prescient
-  :pin melpa-stable
   :after (vertico prescient)
   :config
   (setq vertico-prescient-completion-styles '(prescient orderless basic partial-completion emacs22 flex initials shorthand)))
 
 (use-package corfu-prescient
-  :pin melpa-stable
   :after (corfu prescient orderless)
   :config (corfu-prescient-mode)
   :custom
@@ -397,30 +421,25 @@ If the new path's directories does not exist, create them."
 ;; no concurrency means we have to use dtach if we want anything
 ;; resembling a normal shell command situation
 (use-package detached
-  :pin melpa-stable
   :bind (([remap async-shell-command] . detached-shell-command))
   :config (detached-init))
 
 ;; what the hell, let's give it a try
 ;; sorry, eshell. you are not a real thing
 (use-package eat
-  :pin nongnu
   :bind ("C-c t" . eat))
 
 (use-package expand-region
-  :pin melpa-stable
   :bind ("C-c n" . er/expand-region))
 
 ;; Smarter and faster than consult-ripgrep
 (use-package deadgrep
-  :pin melpa-stable
   :bind ("C-c h" . deadgrep))
 
 ;; Emacs undo is ruthlessly unintuitive and the only
 ;; time I can ever get it straight is with a visual representation
 ;; of the internals.
 (use-package vundo
-  :pin gnu
   :bind ("C-c z" . vundo)
   :custom (vundo-glyph-alist vundo-unicode-symbols))
 
@@ -439,44 +458,39 @@ If the new path's directories does not exist, create them."
 
 ;; This should be built into Emacs, it's obvious
 (use-package breadcrumb
-  :pin gnu
   :config
   (breadcrumb-mode))
 
 ;; it's great. However, don't forget about vc-mode,
 ;; which can be just as fast.
 (use-package magit
-  :pin melpa-stable
-  :bind ("C-c g" . magit-status))
+  :bind ("C-c g" . magit-status)
+  :config
+  (push 'stage-all-changes magit-no-confirm))
 
 ;; Best jump-to package.
 (use-package avy
-  :pin melpa-stable
   :bind (("C-c l" . avy-goto-line)
 	 ("C-c k" . avy-kill-whole-line)))
 
 ;; Transient interface for avy
 (use-package casual-suite
-  :pin melpa-stable
   :bind ("C-c j" . casual-avy-tmenu)
   :bind (:map dired-mode-map
               ("s-b" . casual-dired-tmenu)))
 
 ;; Aggressively use tree-sitter
 (use-package treesit-auto
-  :pin melpa-stable
   :custom
   (push '(go-mode . go-ts-mode) major-mode-remap-alist)
   (treesit-auto-install 'prompt))
 
 ;; Better window switching
 (use-package ace-window
-  :pin melpa-stable
   :bind ("C-c o" . ace-window))
 
 ;; Replace crappy native Emacs help
 (use-package helpful
-  :pin melpa-stable
   :bind (:map help-map
 	      ("f" . helpful-callable)
 	      ("v" . helpful-variable)
@@ -484,7 +498,6 @@ If the new path's directories does not exist, create them."
 	      ))
 
 (use-package diff-hl
-  :pin melpa-stable
   :hook (magit-pre-refresh . diff-hl-magit-pre-refresh)
   :hook (magit-post-refresh . diff-hl-magit-pre-refresh)
   :after magit
@@ -503,7 +516,6 @@ If the new path's directories does not exist, create them."
 
 ;; Rich completion styles (you don't realize how much you miss these...)
 (use-package orderless
-  :pin melpa-stable
   :after prescient
   :custom
   (orderless-matching-styles '(orderless-literal
@@ -541,18 +553,17 @@ If the new path's directories does not exist, create them."
 
 ;; LSP
 (use-package eglot
-  :pin manual
-  :hook (rust-mode . eglot-ensure)
-  ; :hook (before-save . eglot-format-buffer)
+  :hook ((rust-mode . eglot-ensure))
   :bind (:map eglot-mode-map
               ("C-c c" . eglot-code-actions)
               ("C-c a r" . eglot-rename))
   :bind (("s-r" . xref-find-references)
          ("s-f" . xref-find-definitions)
-         ("s-i" . xref-find-implementations)))
+         ("s-i" . xref-find-implementations))
+  :config
+  (add-hook 'before-save-hook #'eglot-format-buffer nil t))
 
 (use-package consult-eglot
-  :pin melpa
   :after consult
   :bind ("s-t" . consult-eglot-symbols))
 
@@ -564,51 +575,50 @@ If the new path's directories does not exist, create them."
   (flymake-show-diagnostics-at-end-of-line t))
 
 (use-package rust-mode
-  :pin melpa-stable
   :custom (rust-format-on-save))
 
 ;; May not be necessary anymore, I can't tell
 (use-package exec-path-from-shell
-  :pin melpa-stable
   :config
   (exec-path-from-shell-initialize))
 
+(use-package github-browse-file)
+
 ;; Makefile targeting via Consult
 (use-package makefile-executor
-  :pin melpa
   :bind ("C-c M" . makefile-executor-execute-project-target))
 
 ;; Necessary for shell stuff to work right
 (use-package direnv
-  :pin melpa-stable
   :config (direnv-mode)
   :custom (direnv-always-show-summary nil))
 
 ;; GitHub Codespaces
 (use-package codespaces
-  :pin melpa
   :config
   (codespaces-setup)
-  (push 'tramp-own-remote-path tramp-remote-path)  
+  (push 'tramp-own-remote-path tramp-remote-path)
   :custom
   (vc-handled-backends '(Git))
   (tramp-ssh-controlmaster-options ""))
 
 (use-package protobuf-mode :pin melpa-stable)
 (use-package go-mode :pin melpa-stable
-  :hook (go-mode . eglot-ensure))
+  :hook ((go-mode . eglot-ensure)
+         (before-save . gofmt-before-save)))
 (use-package terraform-mode :pin melpa-stable)
 (use-package dockerfile-mode :pin melpa-stable)
 (use-package markdown-mode :pin melpa-stable)
 (use-package yaml-mode :pin melpa-stable)
+(use-package haskell-mode
+  ; TODO: haskell-mode treats comma specially, which fucks with modalka
+  :pin melpa-stable)
 
 (use-package yaml-imenu
-  :pin melpa-stable
   :after yaml-mode
   :config (yaml-imenu-enable))
 
 (use-package flymake-yamllint
-  :pin melpa-stable
   :hook (yaml-mode . flymake-mode)
   :hook (yaml-mode . flymake-yamllint-setup))
 
@@ -629,7 +639,6 @@ If the new path's directories does not exist, create them."
 ;; modalka can imitate how Devil treats the leader key when typing
 ;; a space after a comma.
 (use-package modalka
-  :pin melpa-stable
   :after cape
   :hook (prog-mode . modalka-mode)
   :hook (read-only-mode . modalka-mode)
@@ -681,7 +690,7 @@ If the new path's directories does not exist, create them."
       (when (< (time-to-seconds delta) 2) (insert ", "))
       (modalka-mode -1)))
   ;; The incongruities in the following reflect ~20 years of
-  ;; brain-breakage induced by Emacs eybindings
+  ;; brain-breakage induced by Emacs keybindings
   (modalka-define-kbd "a" "C-a")
   (modalka-define-kbd "b" "C-c b")
   (define-key modalka-mode-map "c" mode-specific-map)
@@ -697,6 +706,7 @@ If the new path's directories does not exist, create them."
   (modalka-define-kbd "i" "C-c i")
   (modalka-define-kbd "I" "C-c I")
   (modalka-define-kbd "j" "C-c j")
+  (modalka-define-kbd "J" "C-c J")
   (modalka-define-kbd "k" "C-k")
   (modalka-define-kbd "K" "C-c k")
   (modalka-define-kbd "l" "C-c l")
@@ -726,12 +736,7 @@ If the new path's directories does not exist, create them."
  ;; Your init file should contain only one such instance.
  ;; If there is more than one, they won't work right.
  '(ignored-local-variable-values '((eval auto-save-visited-mode t)))
- '(package-selected-packages
-   '(ace-window breadcrumb cape casual-suite codespaces consult-eglot corfu-prescient deadgrep detached diff-hl direnv dockerfile-mode
-                doom-modeline eat embark-consult exec-path-from-shell expand-region flymake-yamllint go-mode haki-theme helpful htmlize
-                indent-bars magit makefile-executor marginalia markdown-mode modalka nerd-icons-completion nerd-icons-corfu
-                nerd-icons-dired nordic-night-theme orderless protobuf-mode rainbow-delimiters rust-mode terraform-mode
-                timu-spacegrey-theme treesit-auto try unfill vc-use-package vertico-prescient visual-regexp vundo yaml-imenu))
+ '(package-selected-packages nil)
  '(package-vc-selected-packages
    '((indent-bars :vc-backend Git :url "https://github.com/jdtsmith/indent-bars")
      (vc-use-package :vc-backend Git :url "https://github.com/slotThe/vc-use-package")
