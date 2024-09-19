@@ -133,6 +133,7 @@ non-whitespace character on the line."
          ("C-c f" . project-find-file)
 	 ("s-p" . project-find-file)
          ("s-w" . kill-this-buffer)
+         ("<mouse-2>" . nil)
          :map minibuffer-mode-map
          ("<TAB>" . minibuffer-complete))
   :custom
@@ -150,6 +151,7 @@ non-whitespace character on the line."
   (compilation-scroll-output 'first-error) ; stop when dying
   (confirm-kill-processes nil) ; this is naggy
   (default-directory "~/src/") ; mine
+  (delete-by-moving-to-trash t)
   (display-time-default-load-average nil) ; pointless
   (dired-create-destination-dirs 'ask)
   (dired-do-revert-buffer t)
@@ -164,9 +166,11 @@ non-whitespace character on the line."
   (inhibit-startup-screen t) ; if I see that gnu one more time
   (initial-major-mode 'fundamental-mode) ; why is lisp so special huh
   (initial-scratch-message "") ; I know what a scratch buffer is
+  (js-indent-level 2)
   (kill-do-not-save-duplicates t) ; keep kill ring tidy
   (kill-whole-line t) ; behave like macos
   (read-process-update (* 1024 1024)) ; bigger read buffers
+  (read-minibuffer-restore-windows nil)
   (require-final-newline t) ; always newline EOL
   (ring-bell-function 'ignore) ; this only works sometimes lol
   (save-interprogram-paste-before-kill t) ; preserve kill ring better
@@ -397,6 +401,15 @@ If the new path's directories does not exist, create them."
          ("C-c y" . consult-yank-pop)
          ("s-;" . pt/consult-complete)))
 
+(defun consult--format-location (file line &optional str)
+  "Format location string 'FILE:LINE:STR'."
+  (setq line (number-to-string line)
+        str (concat file ":" line (and str ":") str)
+        file (length file))
+  (put-text-property 0 file 'face 'consult-file str)
+  (put-text-property (1+ file) (+ 1 file (length line)) 'face 'consult-line-number str)
+  str)
+
 ;; Needed for the above
 (use-package embark-consult
   :after (embark consult))
@@ -559,7 +572,7 @@ If the new path's directories does not exist, create them."
               ("C-c a r" . eglot-rename))
   :bind (("s-r" . xref-find-references)
          ("s-f" . xref-find-definitions)
-         ("s-i" . xref-find-implementations))
+         ("s-i" . eglot-find-implementation))
   :config
   (add-hook 'before-save-hook #'eglot-format-buffer nil t))
 
@@ -568,7 +581,7 @@ If the new path's directories does not exist, create them."
   :bind ("s-t" . consult-eglot-symbols))
 
 (use-package flymake
-  :pin manual
+  :pin gnu
   :hook (rust-mode . flymake-mode)
   :hook (sh-mode . flymake-mode)
   :custom
@@ -595,6 +608,7 @@ If the new path's directories does not exist, create them."
 
 ;; GitHub Codespaces
 (use-package codespaces
+  :bind ("C-c S" . codespaces-connect)
   :config
   (codespaces-setup)
   (push 'tramp-own-remote-path tramp-remote-path)
@@ -611,8 +625,8 @@ If the new path's directories does not exist, create them."
 (use-package markdown-mode :pin melpa-stable)
 (use-package yaml-mode :pin melpa-stable)
 (use-package haskell-mode
-  ; TODO: haskell-mode treats comma specially, which fucks with modalka
-  :pin melpa-stable)
+  :bind (:map haskell-mode-map ("," . pt/modalka-comma)))
+(use-package typescript-mode)
 
 (use-package yaml-imenu
   :after yaml-mode
@@ -625,6 +639,7 @@ If the new path's directories does not exist, create them."
 ;; Org
 (use-package org
   :pin manual
+  :bind (:map org-mode-map ("C-c ;" . nil))
   :custom
   (org-special-ctrl-a t)
   (org-src-ask-before-returning-to-edit-buffer nil)
@@ -736,7 +751,8 @@ If the new path's directories does not exist, create them."
  ;; Your init file should contain only one such instance.
  ;; If there is more than one, they won't work right.
  '(ignored-local-variable-values '((eval auto-save-visited-mode t)))
- '(package-selected-packages nil)
+ '(package-selected-packages
+   '(typescript-mode flymake ace-window breadcrumb cape casual-suite codespaces consult-eglot corfu-prescient deadgrep detached diff-hl direnv dockerfile-mode doom-modeline dumb-jump eat embark-consult exec-path-from-shell expand-region flymake-yamllint github-browse-file go-mode haskell-mode helpful htmlize indent-bars magit makefile-executor marginalia markdown-mode modalka nerd-icons-completion nerd-icons-corfu nerd-icons-dired orderless protobuf-mode rainbow-delimiters rust-mode terraform-mode treesit-auto try unfill vc-use-package vertico-prescient visual-regexp vundo yaml-imenu))
  '(package-vc-selected-packages
    '((indent-bars :vc-backend Git :url "https://github.com/jdtsmith/indent-bars")
      (vc-use-package :vc-backend Git :url "https://github.com/slotThe/vc-use-package")
