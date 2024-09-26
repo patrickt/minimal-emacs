@@ -153,6 +153,7 @@ non-whitespace character on the line."
   (default-directory "~/src/") ; mine
   (delete-by-moving-to-trash t)
   (display-time-default-load-average nil) ; pointless
+  (dired-kill-when-opening-new-dired-buffer t)
   (dired-create-destination-dirs 'ask)
   (dired-do-revert-buffer t)
   (dired-kill-when-opening-new-dired-buffer t) ; don't spawn a million buffers
@@ -188,7 +189,6 @@ non-whitespace character on the line."
   (x-underline-at-descent-line t) ; superstition
   :config
   (context-menu-mode) ; Fairly useless, but better than nothing
-  (electric-pair-mode) ; Problematic, but built-in
   (delete-selection-mode) ; The obvious behavior
   (global-auto-revert-mode) ; Every other editor does this
   (global-display-line-numbers-mode) ; This is the fastest line number functonality
@@ -280,7 +280,21 @@ If the new path's directories does not exist, create them."
   (which-key-mode)
   (which-key-setup-side-window-bottom))
 
-(setq dired-kill-when-opening-new-dired-buffer t)
+(use-package smartparens
+  :hook ((prog-mode . smartparens-mode)
+         (text-mode . smartparens-mode))
+  :config
+  (require 'smartparens-config)
+  ;; Smartparens doesn't do the obvious thing wrt indentation, but we can fix that.
+  (defun indent-between-pair (&rest _ignored)
+    (newline)
+    (indent-according-to-mode)
+    (forward-line -1)
+    (indent-according-to-mode))
+  (sp-local-pair 'prog-mode "{" nil :post-handlers '((indent-between-pair "RET")))
+  (sp-local-pair 'prog-mode "[" nil :post-handlers '((indent-between-pair "RET")))
+  (sp-local-pair 'prog-mode "(" nil :post-handlers '((indent-between-pair "RET")))
+  )
 
 (use-package dumb-jump
   :bind ("C-c J" . dumb-jump-go))
