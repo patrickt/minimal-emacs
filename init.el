@@ -194,7 +194,6 @@ non-whitespace character on the line."
   (global-display-line-numbers-mode) ; This is the fastest line number functonality
   (global-so-long-mode) ; Avoid potential slowdowns
   (minibuffer-depth-indicate-mode) ; Indicate recursive minibuffers
-  (pixel-scroll-precision-mode) ; More beautiful scrolling
   (tooltip-mode -1) ; just no
   )
 
@@ -282,7 +281,8 @@ If the new path's directories does not exist, create them."
 
 (use-package smartparens
   :hook ((prog-mode . smartparens-mode)
-         (text-mode . smartparens-mode))
+         (text-mode . smartparens-mode)
+         (conf-mode . smartparens-mode))
   :config
   (require 'smartparens-config)
   ;; Smartparens doesn't do the obvious thing wrt indentation, but we can fix that.
@@ -633,7 +633,56 @@ If the new path's directories does not exist, create them."
 (use-package protobuf-mode :pin melpa-stable)
 (use-package go-mode :pin melpa-stable
   :hook ((go-mode . eglot-ensure)
-         (before-save . gofmt-before-save)))
+         (before-save . pt/go-specific-save-hook))
+
+  :config
+  (defun robfig/goimports ()
+    "Formats the current buffer according to the goimports tool."
+
+    (interactive)
+    (let ((tmpfile (make-temp-file "gofmt" nil ".go"))
+          (patchbuf (get-buffer-create "*Gofmt patch*"))
+          (errbuf (get-buffer-create "*Gofmt Errors*"))
+          (coding-system-for-read 'utf-8)
+          (coding-system-for-write 'utf-8))
+
+      (with-current-buffer errbuf
+        (setq buffer-read-only nil)
+        (erase-buffer))
+      (with-current-buffer patchbuf
+        (erase-buffer))
+
+      (write-region nil nil tmpfile)
+
+      ;; We're using errbuf for the mixed stdout and stderr output. This
+      ;; is not an issue because gofmt -w does not produce any stdout
+      ;; output in case of success.
+      (if (zerop (call-process "goimports" nil errbuf nil "-w" tmpfile))
+          (if (zerop (call-process-region (point-min) (point-max) "diff" nil patchbuf nil "-n" "-" tmpfile))
+              (progn
+                (kill-buffer errbuf)
+                (message "Buffer is already gofmted"))
+            (go--apply-rcs-patch patchbuf)
+            (kill-buffer errbuf)
+            (message "Applied gofmt"))
+        (message "Could not apply gofmt. Check errors for details")
+        (gofmt--process-errors (buffer-file-name) tmpfile errbuf))
+
+      (kill-buffer patchbuf)
+      (delete-file tmpfile)))
+
+  (defun pt/go-specific-save-hook ()
+    (when (eq major-mode 'go-mode)
+      (gofmt-before-save)
+      (robfig/goimports))))
+
+(use-package gotest
+  :after go-mode
+  :bind (:map go-mode-map
+              ("C-c a t" . #'go-test-current-test)
+              ("C-c a T" . #'go-test-current-file)
+              ("C-c a i" . #'go-import-add)))
+
 (use-package terraform-mode :pin melpa-stable)
 (use-package dockerfile-mode :pin melpa-stable)
 (use-package markdown-mode :pin melpa-stable)
@@ -673,6 +722,10 @@ If the new path's directories does not exist, create them."
   :hook (read-only-mode . modalka-mode)
   :hook (after-init . modalka-mode)
   :bind ("," . modalka-mode)
+  :bind (:map c-mode-map
+              ("," . modalka-mode))
+  :bind (:map c-mode-base-map
+              ("," . modalka-mode))
   :bind (:map modalka-mode-map
 	      ("," . pt/modalka-comma)
 	      ("<SPC>" . pt/modalka-space)
@@ -766,7 +819,7 @@ If the new path's directories does not exist, create them."
  ;; If there is more than one, they won't work right.
  '(ignored-local-variable-values '((eval auto-save-visited-mode t)))
  '(package-selected-packages
-   '(typescript-mode flymake ace-window breadcrumb cape casual-suite codespaces consult-eglot corfu-prescient deadgrep detached diff-hl direnv dockerfile-mode doom-modeline dumb-jump eat embark-consult exec-path-from-shell expand-region flymake-yamllint github-browse-file go-mode haskell-mode helpful htmlize indent-bars magit makefile-executor marginalia markdown-mode modalka nerd-icons-completion nerd-icons-corfu nerd-icons-dired orderless protobuf-mode rainbow-delimiters rust-mode terraform-mode treesit-auto try unfill vc-use-package vertico-prescient visual-regexp vundo yaml-imenu))
+   '(gotest typescript-mode flymake ace-window breadcrumb cape casual-suite codespaces consult-eglot corfu-prescient deadgrep detached diff-hl direnv dockerfile-mode doom-modeline dumb-jump eat embark-consult exec-path-from-shell expand-region flymake-yamllint github-browse-file go-mode haskell-mode helpful htmlize indent-bars magit makefile-executor marginalia markdown-mode modalka nerd-icons-completion nerd-icons-corfu nerd-icons-dired orderless protobuf-mode rainbow-delimiters rust-mode terraform-mode treesit-auto try unfill vc-use-package vertico-prescient visual-regexp vundo yaml-imenu))
  '(package-vc-selected-packages
    '((indent-bars :vc-backend Git :url "https://github.com/jdtsmith/indent-bars")
      (vc-use-package :vc-backend Git :url "https://github.com/slotThe/vc-use-package")
