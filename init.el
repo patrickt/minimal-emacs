@@ -3,7 +3,6 @@
 (push '(fullscreen . maximized) default-frame-alist)
 
 (require 'package)
-;; TODO: specify these with priority so as to avoid :pins everywhere
 (push '("melpa" . "https://melpa.org/packages/") package-archives)
 (push '("melpa-stable" . "https://stable.melpa.org/packages/") package-archives)
 (push '("nongnu" . "https://elpa.nongnu.org/nongnu/") package-archives)
@@ -18,6 +17,8 @@
 (require 'use-package)
 (setopt use-package-always-ensure t)
 (setopt use-package-always-demand t)
+(set-charset-priority 'unicode)
+(prefer-coding-system 'utf-8-unix)
 
 (defun check-config ()
   "Warn if exiting Emacs with an init file that doesn't load."
@@ -138,7 +139,7 @@ non-whitespace character on the line."
          ("<TAB>" . minibuffer-complete))
   :custom
   (abbrev-suggest t) ; Useful reminder
-  (auto-revert-avoid-polling t) ; use kqueue on macoS
+  (auto-revert-avoid-polling t) ; use kqueue on macSS
   (auto-revert-check-vc-info t) ; behave sanely
   (auto-revert-interval 5) ; wait a little
   (case-fold-search nil) ; case-sensitive searches. staggeringly bad default.
@@ -258,8 +259,8 @@ If the new path's directories does not exist, create them."
   :bind ("C-c r" . recentf)
   :config (recentf-mode)
   :custom
-  (recentf-auto-cleanup (* 60 60))
-  (recentf-max-saved-items 100)
+  (recentf-auto-cleanup 'never)
+  (recentf-max-saved-items 500)
   (recentf-max-menu-items 100))
 
 (use-package savehist
@@ -334,20 +335,6 @@ If the new path's directories does not exist, create them."
 (use-package marginalia
   :config (marginalia-mode))
 
-;; Inline completion is good
-(use-package corfu
-  :hook (corfu-mode . corfu-popupinfo-mode)
-  :bind (:map corfu-map
-              ("'" . corfu-quick-insert)
-	      ("C-n" . corfu-next)
-	      ("C-p" . corfu-previous))
-  :custom
-  (corfu-preselect 'valid)
-  (corfu-popupinfo-delay '(0.25 . 0.1))
-  (corfu-popupinfo-hide nil)
-  :config
-  (global-corfu-mode))
-
 (use-package nerd-icons)
 
 (use-package nerd-icons-dired
@@ -359,29 +346,10 @@ If the new path's directories does not exist, create them."
   :hook (marginalia-mode . nerd-icons-completion-marginalia-setup)
   :config (nerd-icons-completion-mode))
 
-(use-package nerd-icons-corfu
-  :after (nerd-icons corfu)
-  :custom
-  (corfu-margin-formatters '(nerd-icons-corfu-formatter)))
-
-;; Richer data source for corfu
-(use-package cape
-  :bind
-  ("M-/" . cape-prefix-map)
-  :config
-  (setq completion-at-point-functions '(elisp-completion-at-point
-                                        cape-abbrev
-                                        cape-keyword
-                                        cape-dabbrev
-                                        cape-file
-                                        )))
-
 ;; find-and-replace is so crappy otherwise
 (use-package visual-regexp
   :bind (([remap query-replace] . vr/replace)
          ("C-c R" . vr/replace)))
-
-;; (use-package unfill-paragraph)
 
 ;; probably the best package
 (use-package embark
@@ -396,12 +364,15 @@ If the new path's directories does not exist, create them."
 (use-package consult
   :hook (completion-list-mode . consult-preview-at-point-mode)
   :config
+  (push #'consult-completion-in-region completion-at-point-functions)
   (defun pt/consult-complete ()
     (interactive)
     (let
         ((completion-in-region-function #'consult-completion-in-region))
       (call-interactively #'completion-at-point)))
   :custom
+  (consult-narrow-key "<")
+  (completion-in-region-function #'consult-completion-in-region)
   (xref-show-xrefs-function #'consult-xref)
   (xref-show-definitions-function #'consult-xref)
   :bind (("C-s" . consult-line)
@@ -413,7 +384,7 @@ If the new path's directories does not exist, create them."
          ("C-x b" . consult-buffer)
          ("C-c b" . consult-buffer)
          ("C-c y" . consult-yank-pop)
-         ("s-;" . pt/consult-complete)))
+         ("C-." . pt/consult-complete)))
 
 (defun consult--format-location (file line &optional str)
   "Format location string 'FILE:LINE:STR'."
@@ -423,6 +394,20 @@ If the new path's directories does not exist, create them."
   (put-text-property 0 file 'face 'consult-file str)
   (put-text-property (1+ file) (+ 1 file (length line)) 'face 'consult-line-number str)
   str)
+
+(defun consult--position-marker (buffer line column)
+  "Get marker in BUFFER from LINE and COLUMN."
+  (when (buffer-live-p buffer)
+    (with-current-buffer buffer
+      (save-restriction
+        (save-excursion
+          (widen)
+          (goto-char (point-min))
+          ;; Location data might be invalid by now!
+          (ignore-errors
+            (forward-line (1- line))
+            (forward-char column))
+          (point-marker))))))
 
 ;; Needed for the above
 (use-package embark-consult
@@ -435,15 +420,9 @@ If the new path's directories does not exist, create them."
   (prescient-sort-full-matches-first t))
 
 (use-package vertico-prescient
-  :after (vertico prescient)
+  :after vertico
   :config
-  (setq vertico-prescient-completion-styles '(prescient orderless basic partial-completion emacs22 flex initials shorthand)))
-
-(use-package corfu-prescient
-  :after (corfu prescient orderless)
-  :config (corfu-prescient-mode)
-  :custom
-  (corfu-prescient-completion-styles '(prescient orderless basic)))
+  (vertico-prescient-mode))
 
 ;; no concurrency means we have to use dtach if we want anything
 ;; resembling a normal shell command situation
@@ -454,7 +433,7 @@ If the new path's directories does not exist, create them."
 ;; what the hell, let's give it a try
 ;; sorry, eshell. you are not a real thing
 (use-package eat
-  :bind ("C-c t" . eat))
+  :bind ("C-c t" . eat-project))
 
 (use-package expand-region
   :bind ("C-c n" . er/expand-region))
@@ -543,14 +522,8 @@ If the new path's directories does not exist, create them."
 
 ;; Rich completion styles (you don't realize how much you miss these...)
 (use-package orderless
-  :after prescient
   :custom
-  (orderless-matching-styles '(orderless-literal
-                               orderless-prefixes
-                               orderless-initialism
-                               orderless-regexp))
-  (completion-styles '(prescient orderless basic partial-completion emacs22 flex initials shorthand))
-  (completion-category-overrides '((file (styles basic partial-completion)))))
+  (completion-styles '(orderless prescient)))
 
 ;;; Programming stuff
 
@@ -580,15 +553,22 @@ If the new path's directories does not exist, create them."
 
 ;; LSP
 (use-package eglot
-  :hook ((rust-mode . eglot-ensure))
+  :hook ((rust-mode . eglot-ensure) (before-save . pt/format-if-eglot))
   :bind (:map eglot-mode-map
               ("C-c c" . eglot-code-actions)
               ("C-c a r" . eglot-rename))
   :bind (("s-r" . xref-find-references)
          ("s-f" . xref-find-definitions)
-         ("s-i" . eglot-find-implementation))
+         ("s-i" . eglot-find-implementation)
+         ([remap rust-test] . rust-nextest))
   :config
-  (add-hook 'before-save-hook #'eglot-format-buffer nil t))
+  (defun pt/format-if-eglot ()
+    (interactive)
+    (when (eglot-current-server) (eglot-format-buffer)))
+  (defun rust-nextest ()
+    "Test using `cargo test`"
+    (interactive)
+    (compile "cargo nextest run")))
 
 (use-package consult-eglot
   :after consult
@@ -600,6 +580,9 @@ If the new path's directories does not exist, create them."
   :hook (sh-mode . flymake-mode)
   :custom
   (flymake-show-diagnostics-at-end-of-line t))
+
+(use-package fancy-compilation
+  :config (fancy-compilation-mode))
 
 (use-package rust-mode
   :custom (rust-format-on-save))
@@ -633,6 +616,7 @@ If the new path's directories does not exist, create them."
 (use-package protobuf-mode :pin melpa-stable)
 (use-package go-mode :pin melpa-stable
   :hook ((go-mode . eglot-ensure)
+         (go-mode . abbrev-mode)
          (before-save . pt/go-specific-save-hook))
 
   :config
@@ -690,6 +674,19 @@ If the new path's directories does not exist, create them."
 (use-package haskell-mode
   :bind (:map haskell-mode-map ("," . pt/modalka-comma)))
 (use-package typescript-mode)
+(use-package web-mode
+  :hook (js-mode . web-mode))
+(use-package just-mode)
+
+(defun just-consult ()
+  "Run a recipe from the Justfile associated with the current working directory."
+  (interactive)
+  (let*
+      ((command-string (shell-command-to-string "just --summary"))
+       (all-commands (s-split " " (s-trim command-string)))
+       (recipe (completing-read "Justfile command:" all-commands)))
+    (unless recipe (user-error "No command to run"))
+    (compile (format "just %s" recipe))))
 
 (use-package yaml-imenu
   :after yaml-mode
@@ -699,14 +696,14 @@ If the new path's directories does not exist, create them."
   :hook (yaml-mode . flymake-mode)
   :hook (yaml-mode . flymake-yamllint-setup))
 
-;; Org
-(use-package org
-  :pin manual
-  :bind (:map org-mode-map ("C-c ;" . nil))
-  :custom
-  (org-special-ctrl-a t)
-  (org-src-ask-before-returning-to-edit-buffer nil)
-  (org-src-window-setup 'current-window))
+;; ;; Org
+;; (use-package org
+;;   :pin manual
+;;   :bind (:map org-mode-map ("C-c ;" . nil))
+;;   :custom
+;;   (org-special-ctrl-a t)
+;;   (org-src-ask-before-returning-to-edit-buffer nil)
+;;   (org-src-window-setup 'current-window))
 
 (use-package htmlize
   :pin melpa-stable)
@@ -717,7 +714,6 @@ If the new path's directories does not exist, create them."
 ;; modalka can imitate how Devil treats the leader key when typing
 ;; a space after a comma.
 (use-package modalka
-  :after cape
   :hook (prog-mode . modalka-mode)
   :hook (read-only-mode . modalka-mode)
   :hook (after-init . modalka-mode)
@@ -819,9 +815,10 @@ If the new path's directories does not exist, create them."
  ;; If there is more than one, they won't work right.
  '(ignored-local-variable-values '((eval auto-save-visited-mode t)))
  '(package-selected-packages
-   '(gotest typescript-mode flymake ace-window breadcrumb cape casual-suite codespaces consult-eglot corfu-prescient deadgrep detached diff-hl direnv dockerfile-mode doom-modeline dumb-jump eat embark-consult exec-path-from-shell expand-region flymake-yamllint github-browse-file go-mode haskell-mode helpful htmlize indent-bars magit makefile-executor marginalia markdown-mode modalka nerd-icons-completion nerd-icons-corfu nerd-icons-dired orderless protobuf-mode rainbow-delimiters rust-mode terraform-mode treesit-auto try unfill vc-use-package vertico-prescient visual-regexp vundo yaml-imenu))
+   '(justl just-mode fancy-compilation fancy-compilation-mode abbrev dumbparens web-mode gotest typescript-mode flymake ace-window breadcrumb cape casual-suite codespaces consult-eglot corfu-prescient deadgrep detached diff-hl direnv dockerfile-mode doom-modeline dumb-jump eat embark-consult exec-path-from-shell expand-region flymake-yamllint github-browse-file go-mode haskell-mode helpful htmlize indent-bars magit makefile-executor marginalia markdown-mode modalka nerd-icons-completion nerd-icons-corfu nerd-icons-dired orderless protobuf-mode rainbow-delimiters rust-mode terraform-mode treesit-auto try unfill vc-use-package vertico-prescient visual-regexp vundo yaml-imenu))
  '(package-vc-selected-packages
-   '((indent-bars :vc-backend Git :url "https://github.com/jdtsmith/indent-bars")
+   '((dumbparens :vc-backend Git :url "https://github.com/radian-software/dumbparens")
+     (indent-bars :vc-backend Git :url "https://github.com/jdtsmith/indent-bars")
      (vc-use-package :vc-backend Git :url "https://github.com/slotThe/vc-use-package")
      (sideline-eglot :url "https://github.com/emacs-sideline/sideline-eglot.git"))))
 (custom-set-faces
