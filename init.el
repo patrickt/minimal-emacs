@@ -493,6 +493,7 @@ If the new path's directories does not exist, create them."
 (use-package diff-hl
   :hook ((magit-pre-refresh . diff-hl-magit-pre-refresh)
          (magit-post-refresh . diff-hl-magit-pre-refresh)
+         (magit-post-refresh . diff-hl-update)
          (vc-checkin-hook . magit-refresh)
          )
   :after magit
@@ -508,6 +509,12 @@ If the new path's directories does not exist, create them."
      (change . " ")
      (unknown . "?")
      (ignored . "i"))))
+
+(use-package buffer-terminator
+  :custom
+  (buffer-terminator-verbose nil)
+  :config
+  (buffer-terminator-mode))
 
 ;;; Programming stuff
 
@@ -763,7 +770,7 @@ If the new path's directories does not exist, create them."
  ;; If there is more than one, they won't work right.
  '(ignored-local-variable-values '((eval auto-save-visited-mode t)))
  '(package-selected-packages
-   '(code-review modus-themes lua-mode immaterial-theme justl just-mode fancy-compilation fancy-compilation-mode abbrev dumbparens web-mode gotest typescript-mode flymake ace-window breadcrumb cape casual-suite codespaces consult-eglot corfu-prescient deadgrep detached diff-hl direnv dockerfile-mode doom-modeline dumb-jump eat embark-consult exec-path-from-shell expand-region flymake-yamllint github-browse-file go-mode haskell-mode helpful htmlize indent-bars magit makefile-executor marginalia markdown-mode modalka nerd-icons-completion nerd-icons-corfu nerd-icons-dired orderless protobuf-mode rainbow-delimiters rust-mode terraform-mode treesit-auto try unfill vc-use-package vertico-prescient visual-regexp vundo yaml-imenu))
+   '(buffer-terminator code-review modus-themes lua-mode immaterial-theme justl just-mode fancy-compilation fancy-compilation-mode abbrev dumbparens web-mode gotest typescript-mode flymake ace-window breadcrumb cape casual-suite codespaces consult-eglot corfu-prescient deadgrep detached diff-hl direnv dockerfile-mode doom-modeline dumb-jump eat embark-consult exec-path-from-shell expand-region flymake-yamllint github-browse-file go-mode haskell-mode helpful htmlize indent-bars magit makefile-executor marginalia markdown-mode modalka nerd-icons-completion nerd-icons-corfu nerd-icons-dired orderless protobuf-mode rainbow-delimiters rust-mode terraform-mode treesit-auto try unfill vc-use-package vertico-prescient visual-regexp vundo yaml-imenu))
  '(package-vc-selected-packages
    '((dumbparens :vc-backend Git :url "https://github.com/radian-software/dumbparens")
      (indent-bars :vc-backend Git :url "https://github.com/jdtsmith/indent-bars")
