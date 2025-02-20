@@ -20,6 +20,10 @@
 (set-charset-priority 'unicode)
 (prefer-coding-system 'utf-8-unix)
 
+(use-package modus-themes
+  :config
+  (load-theme 'modus-vivendi-tritanopia))
+
 (defun check-config ()
   "Warn if exiting Emacs with an init file that doesn't load."
   (or
@@ -80,6 +84,13 @@ non-whitespace character on the line."
   (insert ";")
   (newline-and-indent))
 
+(defun pt/eol-comma-then-newline ()
+  "Go to end of line, insert a semicolon, then `newline-and-indent'."
+  (interactive)
+  (move-end-of-line nil)
+  (insert ",")
+  (newline-and-indent))
+
 (defun pt/project-relative-file-name (include-prefix)
   "Return the project-relative filename, or the full path if INCLUDE-PREFIX is t."
   (letrec
@@ -97,14 +108,6 @@ non-whitespace character on the line."
     (kill-new filename)
     (message "Copied buffer file name '%s' to the kill ring." filename)))
 
-(defun pt/indent ()
-  (interactive)
-  (indent-rigidly (point-at-bol) (point-at-eol) standard-indent))
-
-(defun pt/dedent ()
-  (interactive)
-  (indent-rigidly (point-at-bol) (point-at-eol) (- standard-indent)))
-
 (defun display-startup-echo-area-message ()
   "Override the normally tedious startup message."
   (message "Welcome back."))
@@ -116,6 +119,7 @@ non-whitespace character on the line."
   :bind (("C-;" . execute-extended-command)
 	 ("C-c ;" . execute-extended-command)
 	 ("C-c ." . completion-at-point)
+         ("C-."   . completion-at-point)
 	 ("C-a" . pt/beginning-of-line)
          ("C-c p" . pt/copy-file-name-to-kill-ring)
 	 ("C-c u" . duplicate-dwim)
@@ -129,8 +133,7 @@ non-whitespace character on the line."
 	 ("s-/" . comment-dwim)
          ("s-<return>" . pt/eol-then-newline)
          ("S-s-<return>" . pt/eol-semicolon-then-newline)
-         ("s-[" . pt/dedent)
-         ("s-]" . pt/indent)
+         ("C-s-<return>" . pt/eol-comma-then-newline)
          ("C-c f" . project-find-file)
 	 ("s-p" . project-find-file)
          ("s-w" . kill-this-buffer)
@@ -198,12 +201,6 @@ non-whitespace character on the line."
   (tooltip-mode -1) ; just no
   )
 
-(load-theme 'modus-vivendi)
-
-(use-package ansi-color
-  :hook (compilation-filter . ansi-color-compilation-filter))
-
-(setq-default fill-column 135) ; it's not 1975 anymore, we have wide screens
 
 ;; Stolen from Bedrock Emacs. Justified because backup files are so annoying.
 ;; Don't litter file system with *~ backup files; put them all inside
@@ -247,8 +244,6 @@ If the new path's directories does not exist, create them."
 
 (use-package try)
 
-;;; Built-in package
-;; See also use-package emacs above
 (use-package hl-line
   :pin manual
   :hook ((prog-mode . hl-line-mode)
@@ -278,7 +273,7 @@ If the new path's directories does not exist, create them."
   (which-key-idle-delay 0.5)
   :config
   (which-key-mode)
-  (which-key-setup-side-window-bottom))
+  (which-key-setup-minibuffer))
 
 (use-package smartparens
   :hook ((prog-mode . smartparens-mode)
@@ -312,7 +307,6 @@ If the new path's directories does not exist, create them."
 
 ;;; Completion/UI
 
-;; The default modeline is underrated but doom-modeline is better about paths
 (use-package doom-modeline
   :custom
   (doom-modeline-hud nil)
@@ -321,7 +315,6 @@ If the new path's directories does not exist, create them."
   (doom-modeline-buffer-file-name-style 'relative-from-project)
   :config (doom-modeline-mode))
 
-;; Best completion package
 (use-package vertico
   :bind (:map vertico-map
               ("'"           . vertico-quick-exit)
@@ -331,7 +324,6 @@ If the new path's directories does not exist, create them."
   :custom
   (vertico-count 25))
 
-;; Informative minibuffer data
 (use-package marginalia
   :config (marginalia-mode))
 
@@ -346,12 +338,10 @@ If the new path's directories does not exist, create them."
   :hook (marginalia-mode . nerd-icons-completion-marginalia-setup)
   :config (nerd-icons-completion-mode))
 
-;; find-and-replace is so crappy otherwise
 (use-package visual-regexp
   :bind (([remap query-replace] . vr/replace)
          ("C-c R" . vr/replace)))
 
-;; probably the best package
 (use-package embark
   :bind (("C-c e" . embark-act)
          ("C-h b" . embark-bindings))
@@ -359,17 +349,8 @@ If the new path's directories does not exist, create them."
   (embark-cycle-key ".")
   (embark-verbose-indicator-display-action '(display-buffer-below-selected)))
 
-;; Consult has a zillion things; I wish it was smaller, but what it does
-;; it does well, and it's smaller than Helm.
 (use-package consult
   :hook (completion-list-mode . consult-preview-at-point-mode)
-  :config
-  (push #'consult-completion-in-region completion-at-point-functions)
-  (defun pt/consult-complete ()
-    (interactive)
-    (let
-        ((completion-in-region-function #'consult-completion-in-region))
-      (call-interactively #'completion-at-point)))
   :custom
   (consult-narrow-key "<")
   (completion-in-region-function #'consult-completion-in-region)
@@ -383,8 +364,9 @@ If the new path's directories does not exist, create them."
          ("C-c `" . consult-flymake)
          ("C-x b" . consult-buffer)
          ("C-c b" . consult-buffer)
-         ("C-c y" . consult-yank-pop)
-         ("C-." . pt/consult-complete)))
+         ("C-c y" . consult-yank-pop)))
+
+;; These are crappy workarounds for the fact that the package ecosystem is broken.
 
 (defun consult--format-location (file line &optional str)
   "Format location string 'FILE:LINE:STR'."
@@ -409,20 +391,8 @@ If the new path's directories does not exist, create them."
             (forward-char column))
           (point-marker))))))
 
-;; Needed for the above
 (use-package embark-consult
   :after (embark consult))
-
-;; remembering past inputs costs nothing and is user-friendly
-(use-package prescient
-  :config (prescient-persist-mode)
-  :custom
-  (prescient-sort-full-matches-first t))
-
-(use-package vertico-prescient
-  :after vertico
-  :config
-  (vertico-prescient-mode))
 
 ;; no concurrency means we have to use dtach if we want anything
 ;; resembling a normal shell command situation
@@ -430,15 +400,12 @@ If the new path's directories does not exist, create them."
   :bind (([remap async-shell-command] . detached-shell-command))
   :config (detached-init))
 
-;; what the hell, let's give it a try
-;; sorry, eshell. you are not a real thing
 (use-package eat
   :bind ("C-c t" . eat-project))
 
 (use-package expand-region
   :bind ("C-c n" . er/expand-region))
 
-;; Smarter and faster than consult-ripgrep
 (use-package deadgrep
   :bind ("C-c h" . deadgrep))
 
@@ -474,10 +441,30 @@ If the new path's directories does not exist, create them."
   :config
   (push 'stage-all-changes magit-no-confirm))
 
+(use-package code-review
+  :custom
+  (forge-owned-accounts '(("patrickt" . nil)))
+  (code-review-auth-login-marker 'forge)
+  (code-review-fill-column 80)
+  (code-review-new-buffer-window-strategy #'switch-to-buffer-other-window)
+  :after (magit forge emojify)
+  :bind (:map forge-pullreq-section-map (("RET" . #'forge-browse-dwim)
+                                         ("C-c r" . #'code-review-forge-pr-at-point)))
+  :bind (:map forge-topic-mode-map ("C-c r" . #'code-review-forge-pr-at-point))
+  :bind (:map code-review-mode-map (("C-c n" . #'code-review-comment-jump-next)
+                                    ("N" . #'code-review-comment-jump-next)
+                                    ("P" . #'code-review-comment-jump-previous)
+                                    ("C-c p" . #'code-review-comment-jump-previous))))
+
 ;; Best jump-to package.
 (use-package avy
   :bind (("C-c l" . avy-goto-line)
 	 ("C-c k" . avy-kill-whole-line)))
+
+(use-package orderless
+  :custom
+  (completion-styles '(orderless basic))
+  (completion-category-overrides '((file (orderless styles basic partial-completion)))))
 
 ;; Transient interface for avy
 (use-package casual-suite
@@ -504,8 +491,10 @@ If the new path's directories does not exist, create them."
 	      ))
 
 (use-package diff-hl
-  :hook (magit-pre-refresh . diff-hl-magit-pre-refresh)
-  :hook (magit-post-refresh . diff-hl-magit-pre-refresh)
+  :hook ((magit-pre-refresh . diff-hl-magit-pre-refresh)
+         (magit-post-refresh . diff-hl-magit-pre-refresh)
+         (vc-checkin-hook . magit-refresh)
+         )
   :after magit
   :config
   (global-diff-hl-mode)
@@ -519,11 +508,6 @@ If the new path's directories does not exist, create them."
      (change . " ")
      (unknown . "?")
      (ignored . "i"))))
-
-;; Rich completion styles (you don't realize how much you miss these...)
-(use-package orderless
-  :custom
-  (completion-styles '(orderless prescient)))
 
 ;;; Programming stuff
 
@@ -594,16 +578,13 @@ If the new path's directories does not exist, create them."
 
 (use-package github-browse-file)
 
-;; Makefile targeting via Consult
 (use-package makefile-executor
   :bind ("C-c M" . makefile-executor-execute-project-target))
 
-;; Necessary for shell stuff to work right
 (use-package direnv
   :config (direnv-mode)
   :custom (direnv-always-show-summary nil))
 
-;; GitHub Codespaces
 (use-package codespaces
   :bind ("C-c S" . codespaces-connect)
   :config
@@ -613,52 +594,21 @@ If the new path's directories does not exist, create them."
   (vc-handled-backends '(Git))
   (tramp-ssh-controlmaster-options ""))
 
-(use-package protobuf-mode :pin melpa-stable)
-(use-package go-mode :pin melpa-stable
+(use-package protobuf-mode)
+
+(use-package go-mode
+  :custom
+  (gofmt-command "goimports")
   :hook ((go-mode . eglot-ensure)
          (go-mode . abbrev-mode)
          (before-save . pt/go-specific-save-hook))
-
   :config
-  (defun robfig/goimports ()
-    "Formats the current buffer according to the goimports tool."
-
+  (defun pt/go-mod-vendor-tidy ()
     (interactive)
-    (let ((tmpfile (make-temp-file "gofmt" nil ".go"))
-          (patchbuf (get-buffer-create "*Gofmt patch*"))
-          (errbuf (get-buffer-create "*Gofmt Errors*"))
-          (coding-system-for-read 'utf-8)
-          (coding-system-for-write 'utf-8))
-
-      (with-current-buffer errbuf
-        (setq buffer-read-only nil)
-        (erase-buffer))
-      (with-current-buffer patchbuf
-        (erase-buffer))
-
-      (write-region nil nil tmpfile)
-
-      ;; We're using errbuf for the mixed stdout and stderr output. This
-      ;; is not an issue because gofmt -w does not produce any stdout
-      ;; output in case of success.
-      (if (zerop (call-process "goimports" nil errbuf nil "-w" tmpfile))
-          (if (zerop (call-process-region (point-min) (point-max) "diff" nil patchbuf nil "-n" "-" tmpfile))
-              (progn
-                (kill-buffer errbuf)
-                (message "Buffer is already gofmted"))
-            (go--apply-rcs-patch patchbuf)
-            (kill-buffer errbuf)
-            (message "Applied gofmt"))
-        (message "Could not apply gofmt. Check errors for details")
-        (gofmt--process-errors (buffer-file-name) tmpfile errbuf))
-
-      (kill-buffer patchbuf)
-      (delete-file tmpfile)))
-
+    (async-shell-command "go mod vendor && go mod tidy"))
   (defun pt/go-specific-save-hook ()
     (when (eq major-mode 'go-mode)
-      (gofmt-before-save)
-      (robfig/goimports))))
+      (gofmt-before-save))))
 
 (use-package gotest
   :after go-mode
@@ -667,10 +617,10 @@ If the new path's directories does not exist, create them."
               ("C-c a T" . #'go-test-current-file)
               ("C-c a i" . #'go-import-add)))
 
-(use-package terraform-mode :pin melpa-stable)
-(use-package dockerfile-mode :pin melpa-stable)
-(use-package markdown-mode :pin melpa-stable)
-(use-package yaml-mode :pin melpa-stable)
+(use-package terraform-mode)
+(use-package dockerfile-mode)
+(use-package markdown-mode)
+(use-package yaml-mode)
 (use-package haskell-mode
   :bind (:map haskell-mode-map ("," . pt/modalka-comma)))
 (use-package typescript-mode)
@@ -696,17 +646,15 @@ If the new path's directories does not exist, create them."
   :hook (yaml-mode . flymake-mode)
   :hook (yaml-mode . flymake-yamllint-setup))
 
-;; ;; Org
-;; (use-package org
-;;   :pin manual
-;;   :bind (:map org-mode-map ("C-c ;" . nil))
-;;   :custom
-;;   (org-special-ctrl-a t)
-;;   (org-src-ask-before-returning-to-edit-buffer nil)
-;;   (org-src-window-setup 'current-window))
+(use-package org
+  :pin manual
+  :bind (:map org-mode-map ("C-c ;" . nil))
+  :custom
+  (org-special-ctrl-a t)
+  (org-src-ask-before-returning-to-edit-buffer nil)
+  (org-src-window-setup 'current-window))
 
-(use-package htmlize
-  :pin melpa-stable)
+(use-package htmlize)
 
 ;; Cobble-yourself-a-modal-editor. Works better than the giant hack
 ;; that is devil-mode. However, I do use the comma key as the leader
@@ -815,7 +763,7 @@ If the new path's directories does not exist, create them."
  ;; If there is more than one, they won't work right.
  '(ignored-local-variable-values '((eval auto-save-visited-mode t)))
  '(package-selected-packages
-   '(justl just-mode fancy-compilation fancy-compilation-mode abbrev dumbparens web-mode gotest typescript-mode flymake ace-window breadcrumb cape casual-suite codespaces consult-eglot corfu-prescient deadgrep detached diff-hl direnv dockerfile-mode doom-modeline dumb-jump eat embark-consult exec-path-from-shell expand-region flymake-yamllint github-browse-file go-mode haskell-mode helpful htmlize indent-bars magit makefile-executor marginalia markdown-mode modalka nerd-icons-completion nerd-icons-corfu nerd-icons-dired orderless protobuf-mode rainbow-delimiters rust-mode terraform-mode treesit-auto try unfill vc-use-package vertico-prescient visual-regexp vundo yaml-imenu))
+   '(code-review modus-themes lua-mode immaterial-theme justl just-mode fancy-compilation fancy-compilation-mode abbrev dumbparens web-mode gotest typescript-mode flymake ace-window breadcrumb cape casual-suite codespaces consult-eglot corfu-prescient deadgrep detached diff-hl direnv dockerfile-mode doom-modeline dumb-jump eat embark-consult exec-path-from-shell expand-region flymake-yamllint github-browse-file go-mode haskell-mode helpful htmlize indent-bars magit makefile-executor marginalia markdown-mode modalka nerd-icons-completion nerd-icons-corfu nerd-icons-dired orderless protobuf-mode rainbow-delimiters rust-mode terraform-mode treesit-auto try unfill vc-use-package vertico-prescient visual-regexp vundo yaml-imenu))
  '(package-vc-selected-packages
    '((dumbparens :vc-backend Git :url "https://github.com/radian-software/dumbparens")
      (indent-bars :vc-backend Git :url "https://github.com/jdtsmith/indent-bars")
