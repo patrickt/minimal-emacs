@@ -27,12 +27,13 @@
 (defun check-config ()
   "Warn if exiting Emacs with an init file that doesn't load."
   (or
-   (ignore-errors (load-file "~/.config/emacs/init.el"))
+   (ignore-errors (load-file "~/.emacs.d/init.el"))
    (y-or-n-p "Configuration file may be malformed: really exit?")))
 
 (push #'check-config kill-emacs-query-functions)
 
 ;; This opens a web browser without prompting. No!
+
 (defalias 'describe-gnu-project 'ignore)
 ;; Too easy to accidentally invoke
 (defalias 'view-emacs-news 'ignore)
@@ -115,6 +116,7 @@ non-whitespace character on the line."
 (use-package emacs
   :hook ((compilation-mode . visual-line-mode)
          (prog-mode . goto-address-prog-mode)
+         (prog-mode . completion-preview-mode)
          (before-save . delete-trailing-whitespace))
   :bind (("C-;" . execute-extended-command)
 	 ("C-c ;" . execute-extended-command)
@@ -146,7 +148,6 @@ non-whitespace character on the line."
   (auto-revert-check-vc-info t) ; behave sanely
   (auto-revert-interval 5) ; wait a little
   (case-fold-search nil) ; case-sensitive searches. staggeringly bad default.
-  (custom-safe-themes t) ; don't warn on themes
   (column-number-mode t) ; duh
   (confirm-kill-processes nil) ; stop nagging
   (confirm-nonexistent-file-or-buffer nil) ; new files are fine
@@ -194,7 +195,7 @@ non-whitespace character on the line."
   :config
   (context-menu-mode) ; Fairly useless, but better than nothing
   (delete-selection-mode) ; The obvious behavior
-  (global-auto-revert-mode) ; Every other editor does this
+  ;; (global-auto-revert-mode) ; Every other editor does this
   (global-display-line-numbers-mode) ; This is the fastest line number functonality
   (global-so-long-mode) ; Avoid potential slowdowns
   (minibuffer-depth-indicate-mode) ; Indicate recursive minibuffers
@@ -268,12 +269,21 @@ If the new path's directories does not exist, create them."
   :hook (prog-mode . rainbow-delimiters-mode))
 
 (use-package which-key
+  :diminish
   :pin gnu
   :custom
   (which-key-idle-delay 0.5)
   :config
   (which-key-mode)
   (which-key-setup-minibuffer))
+
+(use-package shut-up)
+
+(use-package minions
+  :config
+  (minions-mode)
+  (push 'pith-recording-mode minions-prominent-modes)
+  (push 'modalka-mode minions-prominent-modes))
 
 (use-package smartparens
   :hook ((prog-mode . smartparens-mode)
@@ -398,7 +408,9 @@ If the new path's directories does not exist, create them."
 ;; resembling a normal shell command situation
 (use-package detached
   :bind (([remap async-shell-command] . detached-shell-command))
-  :config (detached-init))
+  :config
+  (detached-init)
+  (setq detached-shell-program "/bin/zsh"))
 
 (use-package eat
   :bind ("C-c t" . eat-project))
@@ -442,6 +454,7 @@ If the new path's directories does not exist, create them."
   (push 'stage-all-changes magit-no-confirm))
 
 (use-package code-review
+  :disabled
   :custom
   (forge-owned-accounts '(("patrickt" . nil)))
   (code-review-auth-login-marker 'forge)
@@ -593,6 +606,7 @@ If the new path's directories does not exist, create them."
   :custom (direnv-always-show-summary nil))
 
 (use-package codespaces
+  :disabled
   :bind ("C-c S" . codespaces-connect)
   :config
   (codespaces-setup)
@@ -629,7 +643,8 @@ If the new path's directories does not exist, create them."
 (use-package markdown-mode)
 (use-package yaml-mode)
 (use-package haskell-mode
-  :bind (:map haskell-mode-map ("," . pt/modalka-comma)))
+  :bind (:map haskell-mode-map ("," . modalka-mode))
+  :bind (:map haskell-indentation-mode-map ("," . modalka-mode)))
 (use-package typescript-mode)
 (use-package web-mode
   :hook (js-mode . web-mode))
@@ -662,6 +677,62 @@ If the new path's directories does not exist, create them."
   (org-src-window-setup 'current-window))
 
 (use-package htmlize)
+
+(when (executable-find "opam")
+  (add-to-list 'load-path "/Users/patrick/.opam/default/share/emacs/site-lisp")
+  (require 'ocp-indent)
+  (autoload 'merlin-mode "merlin" nil t nil)
+  (add-hook 'tuareg-mode-hook 'merlin-mode t)
+  (add-hook 'caml-mode-hook 'merlin-mode t)
+  (setq merlin-command 'opam))
+
+     (let ((opam-share (ignore-errors (car (process-lines "opam" "var" "share")))))
+      (when (and opam-share (file-directory-p opam-share))
+       ;; Register Merlin
+       (message (expand-file-name "emacs/site-lisp" opam-share))))
+
+(when (executable-find "sclang")
+  (push "/Users/patrick/Library/Application Support/SuperCollider/downloaded-quarks/scel/el" load-path)
+
+  (require 'sclang)
+
+  (push "/Users/patrick/src/pith" load-path)
+
+  (bind-key "C-<return>" #'sclang-eval-defun sclang-mode-map)
+  (setf sclang-show-workspace-on-startup nil)
+
+  (use-package tidal
+    :bind (:map tidal-mode-map ("," . modalka-mode))
+    )
+
+  (use-package real-auto-save
+    :hook (tidal-mode . real-auto-save-mode)
+    :custom (real-auto-save-interval 100))
+
+  (defun tidal-hush ()
+    "Stop all the patterns currently running."
+    (interactive)
+    (tidal-send-string "hush"))
+
+  (use-package emms)
+  (emms-all)
+  (require 'emms-setup)
+
+  (require 'pith)
+
+  (bind-key "C-x c" #'pith-dispatch)
+  (bind-key "C-<RET>" #'tidal-run-multiple-lines tidal-mode-map)
+
+  (setq pith-workdir "/Users/patrick/tidal"
+        pith-sample-reload-command "~reload.value")
+
+  (bind-key "z" #'pith-play-file-at-dired-point dired-mode-map)
+
+  (define-emms-simple-player afplay '(file)
+                             (regexp-opt '(".mp3" ".m4a" ".aac" ".flac" ".wav")) "afplay")
+
+  (setq emms-player-list `(,emms-player-afplay)))
+
 
 ;; Cobble-yourself-a-modal-editor. Works better than the giant hack
 ;; that is devil-mode. However, I do use the comma key as the leader
@@ -768,14 +839,29 @@ If the new path's directories does not exist, create them."
  ;; If you edit it by hand, you could mess it up, so be careful.
  ;; Your init file should contain only one such instance.
  ;; If there is more than one, they won't work right.
- '(ignored-local-variable-values '((eval auto-save-visited-mode t)))
+ '(custom-safe-themes
+   '("937401a2e532f2c8c881b6b3f20d9d4b6b9405bccf72ea6289c9d3f4507eb1ab"
+     default))
  '(package-selected-packages
-   '(buffer-terminator code-review modus-themes lua-mode immaterial-theme justl just-mode fancy-compilation fancy-compilation-mode abbrev dumbparens web-mode gotest typescript-mode flymake ace-window breadcrumb cape casual-suite codespaces consult-eglot corfu-prescient deadgrep detached diff-hl direnv dockerfile-mode doom-modeline dumb-jump eat embark-consult exec-path-from-shell expand-region flymake-yamllint github-browse-file go-mode haskell-mode helpful htmlize indent-bars magit makefile-executor marginalia markdown-mode modalka nerd-icons-completion nerd-icons-corfu nerd-icons-dired orderless protobuf-mode rainbow-delimiters rust-mode terraform-mode treesit-auto try unfill vc-use-package vertico-prescient visual-regexp vundo yaml-imenu))
+   '(ace-window breadcrumb buffer-terminator casual-suite code-review
+                codespaces consult-eglot deadgrep detached diff-hl
+                direnv dockerfile-mode doom-modeline dumb-jump eat
+                embark-consult emms exec-path-from-shell expand-region
+                fancy-compilation flymake-yamllint github-browse-file
+                go-mode gotest helpful htmlize indent-bars just-mode
+                makefile-executor marginalia minions modalka
+                modus-themes nerd-icons-completion nerd-icons-dired
+                orderless ormolu protobuf-mode rainbow-delimiters
+                real-auto-save rust-mode shut-up smartparens
+                terraform-mode tidal treesit-auto try typescript-mode
+                unfill vc-use-package vertico visual-regexp vundo
+                web-mode yaml-imenu))
  '(package-vc-selected-packages
-   '((dumbparens :vc-backend Git :url "https://github.com/radian-software/dumbparens")
-     (indent-bars :vc-backend Git :url "https://github.com/jdtsmith/indent-bars")
-     (vc-use-package :vc-backend Git :url "https://github.com/slotThe/vc-use-package")
-     (sideline-eglot :url "https://github.com/emacs-sideline/sideline-eglot.git"))))
+   '((indent-bars :vc-backend Git :url
+                  "https://github.com/jdtsmith/indent-bars")
+     (vc-use-package :vc-backend Git :url
+                     "https://github.com/slotThe/vc-use-package")))
+ '(safe-local-variable-directories '("/Users/patrick/src/miller/")))
 (custom-set-faces
  ;; custom-set-faces was added by Custom.
  ;; If you edit it by hand, you could mess it up, so be careful.
