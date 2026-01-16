@@ -27,14 +27,20 @@
 (setq-default tab-width 2)
 (setq-default indent-tabs-mode nil)
 
-(use-package shut-up)
+(use-package shut-up
+  :functions shut-up)
+
 (shut-up (set-fill-column 120))
 
-(use-package modus-themes
-  :config (load-theme 'modus-vivendi-tritanopia t))
+(use-package modus-themes)
+;;:config (load-theme 'modus-vivendi-tritanopia t))
+
+(use-package miasma-theme
+  :config (load-theme 'miasma t))
 
 (defun check-config ()
   "Warn if exiting Emacs with an init file that doesn't load."
+  (interactive)
   (or (ignore-errors
         (load-file "~/.config/emacs/init.el"))
       (y-or-n-p "Configuration file may be malformed: really exit?")))
@@ -110,36 +116,15 @@ non-whitespace character on the line."
   (insert ",")
   (newline-and-indent))
 
-(defun pt/project-relative-file-name (include-prefix)
-  "Return the project-relative filename, or the full path if INCLUDE-PREFIX is t."
-  (letrec ((fullname
-            (if (equal major-mode 'dired-mode)
-                default-directory
-              (buffer-file-name)))
-           (root (project-root (project-current)))
-           (relname
-            (if fullname
-                (file-relative-name fullname root)
-              fullname))
-           (should-strip (and root (not include-prefix))))
-    (if should-strip
-        relname
-      fullname)))
-
-(defun pt/copy-file-name-to-kill-ring (do-not-strip-prefix)
-  "Copy the current buffer file name to the clipboard.
-The path will be relative to the project's root directory, if set.
-Invoking with DO-NOT-STRIP-PREFIX copies the full path."
-  (interactive "P")
-  (let ((filename
-         (pt/project-relative-file-name do-not-strip-prefix)))
-    (kill-new filename)
-    (message "Copied buffer file name '%s' to the kill ring."
-             filename)))
-
 (defun display-startup-echo-area-message ()
   "Override the normally tedious startup message."
   (message "Welcome back."))
+
+(defun pt/reset-gc-limit ()
+  "Set the GC limit to something reasonable."
+  (when custom-file
+    (load-file custom-file))
+  (setq gc-cons-threshold (* 2 100 1024 1024)))
 
 (use-package emacs
   :hook
@@ -147,10 +132,12 @@ Invoking with DO-NOT-STRIP-PREFIX copies the full path."
    (prog-mode . goto-address-prog-mode)
    (prog-mode . subword-mode)
    (prog-mode . completion-preview-mode)
-   (before-save . delete-trailing-whitespace))
+   (before-save . delete-trailing-whitespace)
+   (emacs-startup . pt/reset-gc-limit))
   :bind
   (("C-;" . execute-extended-command)
    ("C-c ;" . execute-extended-command)
+   ("s-P" . execute-extended-command)
    ("C-c ." . completion-at-point)
    ("C-." . completion-at-point)
    ("C-a" . pt/beginning-of-line)
@@ -164,7 +151,6 @@ Invoking with DO-NOT-STRIP-PREFIX copies the full path."
    ("s-c" . pt/copy)
    ("<pinch>" . nil)
    ("s-d" . eldoc)
-   ("s-m" . describe-prefix-bindings)
    ("s-x" . pt/cut)
    ("s-." . completion-at-point)
    ("s-/" . comment-dwim)
@@ -190,6 +176,8 @@ Invoking with DO-NOT-STRIP-PREFIX copies the full path."
   (comment-empty-lines t) ; more consistent comment behavior
   (compilation-read-command nil) ; don't ask for a compilation command every time (C-u overrides)
   (compilation-scroll-output 'first-error) ; stop when dying
+  (completion-ignore-case t)
+  (custom-file (concat user-emacs-directory "custom.el"))
   (default-directory "~/src/") ; mine
   (delete-by-moving-to-trash t)
   (display-time-default-load-average nil) ; pointless
@@ -212,8 +200,9 @@ Invoking with DO-NOT-STRIP-PREFIX copies the full path."
   (kill-do-not-save-duplicates t) ; keep kill ring tidy
   (kill-whole-line t) ; behave like macos
   (pulse-delay 0.02) ; a little quicker please
-  (read-process-update (* 1024 1024)) ; bigger read buffers
+  (read-process-output-max (* 4 65536)) ; bigger read buffers
   (read-minibuffer-restore-windows nil)
+  (read-buffer-completion-ignore-case t) ; whyyyy
   (require-final-newline t) ; always newline EOL
   (ring-bell-function 'ignore) ; this only works sometimes lol
   (save-interprogram-paste-before-kill t) ; preserve kill ring better
@@ -227,6 +216,7 @@ Invoking with DO-NOT-STRIP-PREFIX copies the full path."
   (use-short-answers t) ; obviously
   (use-dialog-box nil) ; macOS integration is terrible
   (use-file-dialog nil) ; use vertico and friends
+  (uniquify-buffer-name-style 'forward)
   (visible-bell nil) ; it still rings sometimes anyway
   (x-underline-at-descent-line t) ; superstition
   (y-or-n-p-use-read-key t)
@@ -240,7 +230,10 @@ Invoking with DO-NOT-STRIP-PREFIX copies the full path."
   (global-so-long-mode) ; Avoid potential slowdowns
   (minibuffer-depth-indicate-mode) ; Indicate recursive minibuffers
   (tooltip-mode -1) ; just no
-  )
+  (winner-mode))
+
+(use-package diff
+  :commands diff-no-select)
 
 ;; Emacs doesn't check whether a buffer actually has unsaved changes
 ;; before asking you. Awful. TODO investigate, this doesn't seem to work right...
@@ -257,7 +250,6 @@ Invoking with DO-NOT-STRIP-PREFIX copies the full path."
 
 (defun current-buffer-matches-file-p ()
   "Return t if the current buffer is identical to its associated file."
-  (autoload 'diff-no-select "diff")
   (when buffer-file-name
     (diff-no-select buffer-file-name (current-buffer) nil 'noasync)
     (with-current-buffer "*Diff*"
@@ -274,29 +266,40 @@ Invoking with DO-NOT-STRIP-PREFIX copies the full path."
  'save-buffers-kill-terminal
  :before #'pt/check-file-modification)
 
+(use-package ediff
+  :pin manual
+  :hook (ediff-after-quit-hook-internal . winner-undo)
+  :custom
+  (ediff-window-setup-function 'ediff-setup-windows-plain)
+  (ediff-split-window-function 'split-window-horizontally)
+  (ediff-diff-options "-w" "ignore whitespace"))
+
 (use-package try) ;; Quick way to test out packages
 
 (use-package hl-line
   :pin manual
   :hook ((prog-mode . hl-line-mode) (text-mode . hl-line-mode)))
 
-(use-package yasnippet :config (shut-up (yas-global-mode)))
+(use-package yasnippet
+  :commands yas-global-mode
+  :config (shut-up (yas-global-mode)))
 
 (use-package yasnippet-capf
+  :commands yasnippet-capf
   :after yasnippet
-  :init
-  (add-to-list 'completion-at-point-functions #'yasnippet-capf))
+  :init (add-to-list 'completion-at-point-functions #'yasnippet-capf))
 
 (use-package recentf
   :pin manual
-  :bind ("C-c r" . recentf)
   :config (shut-up (recentf-mode))
   :custom
   (recentf-auto-cleanup 'never)
   (recentf-max-saved-items 500)
   (recentf-max-menu-items 100))
 
-(use-package savehist :pin manual :config (savehist-mode))
+(use-package savehist
+  :pin manual
+  :config (savehist-mode))
 
 (use-package unfill)
 
@@ -312,6 +315,7 @@ Invoking with DO-NOT-STRIP-PREFIX copies the full path."
   (which-key-setup-minibuffer))
 
 (use-package minions
+  :commands minions-mode
   :custom
   (minions-prominent-modes
    '(global-auto-revert-mode
@@ -321,10 +325,12 @@ Invoking with DO-NOT-STRIP-PREFIX copies the full path."
      pith-recording-mode))
   :config (minions-mode))
 
-(use-package repeat :config (shut-up (repeat-mode)))
+(use-package repeat
+  :config (shut-up (repeat-mode)))
 
 ;; There's gotta be something better than this, right? Someone? Anyone?
 (use-package smartparens
+  :commands sp-local-pair
   :hook
   ((prog-mode . smartparens-mode)
    (text-mode . smartparens-mode)
@@ -352,9 +358,8 @@ Invoking with DO-NOT-STRIP-PREFIX copies the full path."
    nil
    :post-handlers '((indent-between-pair "RET"))))
 
-(use-package dumb-jump :bind ("C-c J" . dumb-jump-go))
-
 (use-package edit-indirect
+  :commands edit-indirect-region
   :config
   (defun pt/edit-sql-indirect ()
     "Edit the currently active region as an indirect SQL buffer."
@@ -362,18 +367,20 @@ Invoking with DO-NOT-STRIP-PREFIX copies the full path."
     (unless (region-active-p)
       (user-error "Select a region first"))
     (edit-indirect-region (region-beginning) (region-end) t)
-    (sql-mode)
-    (flycheck-mode)))
+    (sql-mode)))
 
 (use-package xref
   :pin gnu
   :custom (xref-auto-jump-to-first-xref t)
   :bind
   (("s-r" . #'xref-find-references)
-   ("C-<down-mouse-1>" . #'xref-find-definitions)
-   ("C-S-<down-mouse-1>" . #'xref-find-references)
+   ("s-<mouse-1>" . #'xref-find-definitions-at-mouse)
+   ("C-<down-mouse-1>" . #'xref-find-definitions-at-mouse)
+   ("C-S-<down-mouse-1>" . #'xref-find-references-at-mouse)
    ("C-<down-mouse-2>" . #'xref-go-back)
+   ("s-[" . #'xref-go-back)
    ("M-[" . #'xref-go-back)
+   ("s-]" . #'xref-go-forward)
    ("M-]" . #'xref-go-forward)))
 
 ;;; Completion/UI
@@ -387,14 +394,11 @@ Invoking with DO-NOT-STRIP-PREFIX copies the full path."
   (doom-modeline-window-width-limit nil)
   (doom-modeline-buffer-encoding 'nondefault)
   (doom-modeline-buffer-file-name-style 'relative-from-project)
-  :config
-  (doom-modeline-mode)
-  (defun doom-modeline-vcs-name ()
-    "Display the vcs name."
-    (and vc-mode (magit-get-current-branch))))
+  :config (doom-modeline-mode))
 
 (use-package vertico
   :defines vertico-map
+  :commands vertico-mode
   :bind
   (:map
    vertico-map
@@ -404,24 +408,27 @@ Invoking with DO-NOT-STRIP-PREFIX copies the full path."
   :config (vertico-mode)
   :custom (vertico-count 25))
 
-(use-package marginalia :config (marginalia-mode))
+(use-package marginalia
+  :commands marginalia-mode
+  :config (marginalia-mode))
 
 (use-package all-the-icons)
 
 (use-package visual-regexp
-  :bind
-  (([remap query-replace] . vr/replace) ("C-c R" . vr/replace)))
+  :bind (([remap query-replace] . vr/replace) ("C-c R" . vr/replace)))
 
 (use-package embark
   :bind (("C-c e" . embark-act) ("C-h b" . embark-bindings))
   :custom
   (embark-cycle-key ".")
-  (embark-verbose-indicator-display-action '(display-buffer-below-selected)))
+  (embark-verbose-indicator-display-action
+   '(display-buffer-below-selected)))
 
 (use-package consult
   :hook (completion-list-mode . consult-preview-at-point-mode)
   :custom
-  (consult-narrow-key "<")
+  (consult-narrow-key ">")
+  (consult-widen-key "<")
   (completion-in-region-function #'consult-completion-in-region)
   (xref-show-xrefs-function #'consult-xref)
   (xref-show-definitions-function #'consult-xref)
@@ -435,45 +442,26 @@ Invoking with DO-NOT-STRIP-PREFIX copies the full path."
    ("s-e" . consult-flymake)
    ("C-x b" . consult-buffer)
    ("C-c b" . consult-buffer)
+   ("C-c r" . consult-buffer)
+   ("s-p" . consult-buffer)
    ("C-c y" . consult-yank-pop)))
 
-;; These are crappy workarounds for the fact that the package ecosystem is broken.
-
-;; (defun consult--format-location (file line &optional str)
-;;   "Format location string 'FILE:LINE:STR'."
-;;   (setq line (number-to-string line)
-;;         str (concat file ":" line (and str ":") str)
-;;         file (length file))
-;;   (put-text-property 0 file 'face 'consult-file str)
-;;   (put-text-property (1+ file) (+ 1 file (length line)) 'face 'consult-line-number str)
-;;   str)
-
-;; (defun consult--position-marker (buffer line column)
-;;   "Get marker in BUFFER from LINE and COLUMN."
-;;   (when (buffer-live-p buffer)
-;;     (with-current-buffer buffer
-;;       (save-restriction
-;;         (save-excursion
-;;           (widen)
-;;           (goto-char (point-min))
-;;           ;; Location data might be invalid by now!
-;;           (ignore-errors
-;;             (forward-line (1- line))
-;;             (forward-char column))
-;;           (point-marker))))))
-
-(use-package embark-consult :after (embark consult))
+(use-package embark-consult
+  :after (embark consult))
 
 ;; no concurrency means we have to use dtach if we want anything
 ;; resembling a normal shell command situation
 (use-package detached
+  :commands (detached-init detached-shell-command)
   :bind (([remap async-shell-command] . detached-shell-command))
   :custom (detached-shell-program "/bin/zsh")
   :config (detached-init))
 
-(use-package expand-region :bind ("C-c n" . er/expand-region))
+(use-package expand-region
+  :bind ("C-c n" . er/expand-region))
 
-(use-package deadgrep :bind ("C-c h" . deadgrep))
+(use-package deadgrep
+  :bind ("C-c h" . deadgrep))
 
 ;; Emacs undo is ruthlessly unintuitive and the only
 ;; time I can ever get it straight is with a visual representation
@@ -482,10 +470,8 @@ Invoking with DO-NOT-STRIP-PREFIX copies the full path."
   :bind ("C-c z" . vundo)
   :custom (vundo-glyph-alist vundo-unicode-symbols))
 
-;; TODO: remove this when Emacs 30 is stable
-(unless (package-installed-p 'vc-use-package)
-  (package-vc-install "https://github.com/slotThe/vc-use-package"))
-(require 'vc-use-package)
+(use-package symbol-overlay
+  :hook (prog-mode . symbol-overlay-mode))
 
 (defun pt/open-ghostty ()
   "Switch to Ghostty."
@@ -496,72 +482,103 @@ Invoking with DO-NOT-STRIP-PREFIX copies the full path."
 
 ;; it's better than nothing but I still don't like it.
 (use-package indent-bars
-  :vc (:fetcher github :repo jdtsmith/indent-bars)
+  :vc (:url "https://github.com/jdtsmith/indent-bars")
   :hook (prog-mode . indent-bars-mode)
   :hook (yaml-mode . indent-bars-mode)
   :custom (indent-bars-prefer-character t))
 
 ;; This should be built into Emacs, it's obvious
-(use-package breadcrumb :config (breadcrumb-mode))
+(use-package breadcrumb
+  :commands breadcrumb-mode
+  :config (breadcrumb-mode))
+
+(use-package eglot-booster
+  :vc (:url "https://github.com/jdtsmith/eglot-booster")
+  :hook (eglot-managed-mode . eglot-booster-mode))
 
 ;; it's great. However, don't forget about vc-mode,
 ;; which can be just as fast.
 (use-package magit
+  :defines magit-no-confirm
+  :functions (magit-get-current-branch magit-auto-revert-mode)
   :hook (vc-checkin . magit-refresh)
   :bind ("C-c g" . magit-status)
+  :custom
+  (magit-list-refs-sortby "-committerdate")
+  (magit-no-confirm '(stage-all-changes set-and-push))
   :config
-  (magit-auto-revert-mode +1)
-  (push 'stage-all-changes magit-no-confirm))
+  (defun doom-modeline-vcs-name ()
+    "Display the vcs name."
+    (and vc-mode (magit-get-current-branch)))
+  (magit-auto-revert-mode +1))
 
-(use-package forge :after magit)
+(use-package forge
+  :after magit)
 
 ;; Best jump-to package.
 (use-package avy
-  :bind
-  (("C-c l" . avy-goto-line)
-   ("C-c k" . avy-kill-whole-line)))
+  :bind (("C-c l" . avy-goto-line) ("C-c k" . avy-kill-whole-line)))
 
 (use-package orderless
   :custom
-  (completion-styles '(orderless))
+  (completion-styles '(orderless basic))
   (completion-category-overrides
    '((file (orderless styles basic partial-completion)))))
+
+(use-package man)
+(use-package info)
 
 ;; Transient interface for avy
 (use-package casual-suite
   :pin melpa
+  :config
+  ;; ediff keymap is generated every time?!?
+  ;; i guess there's a hook you can get after the generation?
+  (defalias 'ediff-toggle-help #'casual-man-tmenu)
   :bind
   (("C-c j" . casual-avy-tmenu)
    ("s-E" . #'casual-editkit-main-tmenu)
-   ("s-C" . #'casual-editkit-copy-tmenu))
-  :bind (:map dired-mode-map ("s-b" . casual-dired-tmenu)))
+   ("s-C" . #'casual-editkit-copy-tmenu)
+   ("s-m" . #'casual-compile-tmenu)
+   ("s-o" . #'casual-symbol-overlay-tmenu))
+  :bind
+  (:map dired-mode-map ("?" . casual-dired-tmenu))
+  (:map Man-mode-map ("?" . #'casual-man-tmenu))
+  (:map calc-mode-map ("?" . #'casual-calc-tmenu))
+  (:map Info-mode-map ("?" . #'casual-info-tmenu)))
 
+(use-package eros
+  :commands eros-mode
+  :config (eros-mode))
 
-;; Aggressively use tree-sitter
-;; (use-package treesit-auto
-;;   :disabled ;; slowwwwww
-;;   :config
-;;   (setq treesit-language-source-alist
-;;         '((typescript
-;;            .
-;;            ("https://github.com/tree-sitter/tree-sitter-typescript"
-;;             "master"
-;;             "typescript/src"))
-;;           (tsx
-;;            .
-;;            ("https://github.com/tree-sitter/tree-sitter-typescript"
-;;             "master"
-;;             "tsx/src"))
-;;           (python
-;;            . ("https://github.com/tree-sitter/tree-sitter-python"))))
-;;   (push '(go-mode . go-ts-mode) major-mode-remap-alist)
-;;   (push '(typescript-mode . typescript-ts-mode) major-mode-remap-alist)
-;;   (push '(rust-mode . rust-ts-mode) major-mode-remap-alist)
-;;   (push '(js-mode . js-ts-mode) major-mode-remap-alist)
-;;   (global-treesit-auto-mode))
+;; treesit-auto is super slow with Consult. But it's useful to install
+;; every tree-sitter grammar at once. https://github.com/renzmann/treesit-auto/issues/135
+(use-package treesit-auto
+  :disabled ;; slowwwwww
+  :config
+  (setq treesit-language-source-alist
+        '((typescript
+           .
+           ("https://github.com/tree-sitter/tree-sitter-typescript"
+            "master"
+            "typescript/src"))
+          (tsx
+           .
+           ("https://github.com/tree-sitter/tree-sitter-typescript"
+            "master"
+            "tsx/src"))
+          (python
+           . ("https://github.com/tree-sitter/tree-sitter-python"))))
+  (push '(go-mode . go-ts-mode) major-mode-remap-alist)
+  (push
+   '(typescript-mode . typescript-ts-mode) major-mode-remap-alist)
+  (push '(rust-mode . rust-ts-mode) major-mode-remap-alist)
+  (push '(js-mode . js-ts-mode) major-mode-remap-alist)
+  (global-treesit-auto-mode))
 
 ;; Better window switching
-(use-package ace-window :bind ("C-c o" . ace-window))
+(use-package ace-window
+  :bind ("C-c o" . ace-window))
 
 ;; Replace crappy native Emacs help
 (use-package helpful
@@ -573,6 +590,7 @@ Invoking with DO-NOT-STRIP-PREFIX copies the full path."
    ("k" . helpful-key)))
 
 (use-package diff-hl
+  :commands global-diff-hl-mode
   :hook
   ((magit-pre-refresh . diff-hl-magit-pre-refresh)
    (magit-post-refresh . diff-hl-magit-pre-refresh)
@@ -582,6 +600,7 @@ Invoking with DO-NOT-STRIP-PREFIX copies the full path."
   :config (global-diff-hl-mode))
 
 (use-package buffer-terminator
+  :commands buffer-terminator-mode
   :custom (buffer-terminator-verbose nil)
   :config (buffer-terminator-mode))
 
@@ -589,20 +608,24 @@ Invoking with DO-NOT-STRIP-PREFIX copies the full path."
 
 (use-package project
   :pin gnu
+  :functions pt/recentf-in-project
   :bind ("C-c F" . #'project-switch-project)
+  :bind ("C-c R" . #'pt/recentf-in-project)
   :config
   (defun pt/recentf-in-project ()
     "As `recentf', but filtering based on the current project root."
     (interactive)
-    (let* ((proj (project-current))
-           (root
-            (if proj
-                (project-root proj)
-              (user-error "Not in a project"))))
-      (cl-flet
-          ((ok (fpath) (string-prefix-p root fpath)))
-        (find-file
-         (completing-read "Find recent file:" recentf-list #'ok)))))
+    (consult-buffer '(consult-source-project-recent-file)))
+
+  (defun pt/copy-file-name-to-kill-ring (full-path)
+    "Copy the current buffer file name to the clipboard.
+The path will be relative to the project's root directory, if set.
+Invoking with FULL-PATH copies the full path."
+    (interactive "P")
+    (let ((filename (pt/project-relative-file-name full-path)))
+      (kill-new filename)
+      (message "Copied buffer file name '%s' to the kill ring."
+               filename)))
   :custom
   ;; This is one of my favorite things: you can customize
   ;; the options shown upon switching projects.
@@ -612,23 +635,48 @@ Invoking with DO-NOT-STRIP-PREFIX copies the full path."
      (deadgrep "Grep" ?h)
      (project-dired "Dired" ?d)
      (pt/recentf-in-project "Recently opened" ?r)))
-  (compilation-always-kill t) (project-vc-merge-submodules nil))
+  (compilation-always-kill t)
+  (project-vc-merge-submodules nil))
+
+(defun pt/project-relative-file-name (include-prefix)
+  "Return the project-relative filename, or the full path if INCLUDE-PREFIX is t."
+  (letrec ((fullname
+            (if (equal major-mode 'dired-mode)
+                default-directory
+              (buffer-file-name)))
+           (root (project-root (project-current)))
+           (relname
+            (if fullname
+                (file-relative-name fullname root)
+              fullname))
+           (should-strip (and root (not include-prefix))))
+    (if should-strip
+        relname
+      fullname)))
 
 (use-package apheleia
   :disabled
   :config
-  (push '(sqlfluff
-          .
-          ("sqlfluff" "format" "--dialect" "postgres" "-"))
+  (push '(sqlfluff . ("sqlfluff" "format" "--dialect" "postgres" "-"))
         apheleia-formatters))
 
+(use-package elisp-autofmt
+  :hook (emacs-lisp-mode . elisp-autofmt-mode)
+  :custom (elisp-autofmt-load-packages-local '("use-package-core")))
+
 ;; LSP
+;; investigate gh-actions-language-server someday
 (use-package eglot
   :hook
   ((js-mode . eglot-ensure)
    (rust-mode . eglot-ensure)
+   (just-mode . eglot-ensure)
+   (fish-mode . eglot-ensure)
+   (dockerfile-mode . eglot-ensure)
    (typescript-mode . eglot-ensure)
-   (terraform-mode . eglot-ensure))
+   (terraform-mode . eglot-ensure)
+   (makefile-mode . eglot-ensure)
+   (yaml-mode . eglot-ensure))
   :bind
   (:map
    eglot-mode-map
@@ -641,13 +689,22 @@ Invoking with DO-NOT-STRIP-PREFIX copies the full path."
    ("s-i" . eglot-find-implementation)
    ([remap rust-test] . rust-nextest))
   :config
-  (setq eglot-events-buffer-config
-        '(:size 2000 :format short))
+  (add-to-list
+   'eglot-server-programs '(fish-mode . ("fish-lsp" "start")))
+  (add-to-list
+   'eglot-server-programs
+   '(makefile-mode . ("autotools-language-server")))
+  (setq eglot-events-buffer-config '(:size 2000 :format short))
   (setopt eglot-autoshutdown t))
 
 (use-package consult-eglot
   :after consult
   :bind ("s-t" . consult-eglot-symbols))
+
+(use-package consult-eglot-embark
+  :commands consult-eglot-embark-mode
+  :after consult-eglot
+  :config (consult-eglot-embark-mode))
 
 (use-package lsp-mode
   :disabled
@@ -665,23 +722,36 @@ Invoking with DO-NOT-STRIP-PREFIX copies the full path."
     (breadcrumb-local-mode -1)
     (local-set-key (kbd "<tab-bar> <mouse-movement>") #'ignore)))
 
-(use-package lsp-ui :after lsp-mode :custom (lsp-ui-doc-delay 0.75))
+(use-package lsp-ui
+  :after lsp-mode
+  :custom (lsp-ui-doc-delay 0.75))
 
 (use-package flymake
   :pin gnu
   :hook (sh-mode . flymake-mode)
   :custom (flymake-show-diagnostics-at-end-of-line nil))
 
+(use-package flyover
+  :hook (flymake-mode . flyover-mode))
+
+(use-package flymake-shellcheck
+  :commands flymake-shellcheck-load
+  :init (add-hook 'sh-mode-hook 'flymake-shellcheck-load))
+
 (use-package flymake-sqlfluff
+  :commands flymake-sqlfluff-load
   :config
   (defun pt/sql-hook ()
     (flymake-sqlfluff-load)
     (setq-local tab-width 4))
   :hook (sql-mode . pt/sql-hook))
 
-(use-package fancy-compilation :config (fancy-compilation-mode))
+(use-package fancy-compilation
+  :commands fancy-compilation-mode
+  :config (fancy-compilation-mode))
 
 (use-package rust-mode
+  :defines rust-mode-map
   :hook (rust-mode . rust-ts-mode)
   :config
   (defun rust-nextest ()
@@ -689,6 +759,21 @@ Invoking with DO-NOT-STRIP-PREFIX copies the full path."
     (interactive)
     (compile "cargo nextest run"))
   :custom (rust-format-on-save t))
+
+(use-package cargo-mode
+  :hook (rust-ts-mode . pt/rust-hook)
+  :commands cargo-minor-mode
+  :config
+  (defun pt/rust-hook ()
+    (cargo-minor-mode)
+    (setq-local compile-command "cargo build")))
+
+(use-package transient
+  :commands (transient-prefix transient-setup))
+
+(use-package cargo-transient
+  :after rust-mode
+  :bind (:map rust-mode-map ("C-c M" . cargo-transient)))
 
 (use-package dape
   :bind ("C-c a d" . dape-transient)
@@ -698,57 +783,57 @@ Invoking with DO-NOT-STRIP-PREFIX copies the full path."
    (dape-display-source . pulse-momentary-highlight-one-line))
   :config
   (transient-define-prefix
-    dape-transient () "Dape – Debug Adapter Protocol"
-    [["Session" ("d"
-                 "Start / select config"
-                 dape)
-      ("r" "Restart" dape-restart)
-      ("f" "Restart frame" dape-restart-frame)
-      ("D"
-       "Disconnect + quit"
-       dape-disconnect-quit)
-      ("q" "Quit" dape-quit)]
-     ["Execution"
-      ("p" "Pause" dape-pause)
-      ("c" "Continue" dape-continue)
-      ("n" "Next (step over)" dape-next)
-      ("s" "Step in" dape-step-in)
-      ("o" "Step out" dape-step-out)
-      ("u" "Until" dape-until)]
-     ["Breakpoints" ("b" "Toggle breakpoint" dape-breakpoint-toggle)
-      ("B" "Remove all" dape-breakpoint-remove-all)
-      ("l" "Log breakpoint" dape-breakpoint-log)
-      ("e" "Conditional expr" dape-breakpoint-expression)
-      ("h" "Hit count" dape-breakpoint-hits)]
-     ["Stack / Threads" ("t" "Select thread" dape-select-thread)
-      ("S" "Select stack frame" dape-select-stack)
-      (">" "Frame down" dape-stack-select-down)
-      ("<" "Frame up" dape-stack-select-up)]
-     ["Inspect"
-      ("i" "Info buffer" dape-info)
-      ("x" "Eval expression" dape-evaluate-expression)
-      ("w" "Watch DWIM" dape-watch-dwim)
-      ("R" "REPL" dape-repl)
-      ("m" "Memory" dape-memory)
-      ("M" "Disassemble" dape-disassemble)]])
+   dape-transient () "Dape – Debug Adapter Protocol"
+   [["Session"
+     ("d" "Start / select config" dape)
+     ("r" "Restart" dape-restart)
+     ("f" "Restart frame" dape-restart-frame)
+     ("D" "Disconnect + quit" dape-disconnect-quit)
+     ("q" "Quit" dape-quit)]
+    ["Execution"
+     ("p" "Pause" dape-pause)
+     ("c" "Continue" dape-continue)
+     ("n" "Next (step over)" dape-next)
+     ("s" "Step in" dape-step-in)
+     ("o" "Step out" dape-step-out)
+     ("u" "Until" dape-until)]
+    ["Breakpoints" ("b" "Toggle breakpoint" dape-breakpoint-toggle)
+     ("B" "Remove all" dape-breakpoint-remove-all)
+     ("l" "Log breakpoint" dape-breakpoint-log)
+     ("e"
+      "Conditional expr"
+      dape-breakpoint-expression)
+     ("h" "Hit count" dape-breakpoint-hits)]
+    ["Stack / Threads"
+     ("t" "Select thread" dape-select-thread)
+     ("S" "Select stack frame" dape-select-stack)
+     (">" "Frame down" dape-stack-select-down)
+     ("<" "Frame up" dape-stack-select-up)]
+    ["Inspect"
+     ("i" "Info buffer" dape-info)
+     ("x" "Eval expression" dape-evaluate-expression)
+     ("w" "Watch DWIM" dape-watch-dwim)
+     ("R" "REPL" dape-repl)
+     ("m" "Memory" dape-memory)
+     ("M" "Disassemble" dape-disassemble)]])
   :custom
   (dape-breakpoint-global-mode +1)
   (dape-buffer-window-arrangement 'gud)
   (dape-info-hide-mode-line nil))
 
-;; May not be necessary anymore, I can't tell
+;; This package appears broken for some reason so we do this manually.
 (use-package exec-path-from-shell
   :config
-  (setq exec-path-from-shell-shell-name "/opt/homebrew/bin/fish")
-  (exec-path-from-shell-initialize))
-
-(let*
-    ((fish-path
-      (shell-command-to-string
-       "/opt/homebrew/bin/fish -i -c \"echo -n \\$PATH[1]; for val in \\$PATH[2..-1];echo -n \\\":\\$val\\\";end\""))
-     (full-path (append exec-path (split-string fish-path ":"))))
-  (setenv "PATH" fish-path)
-  (setq exec-path full-path))
+  (let*
+      ((fish-path
+        (shell-command-to-string
+         "/opt/homebrew/bin/fish -i -c \"echo -n \\$PATH[1]; for val in \\$PATH[2..-1];echo -n \\\":\\$val\\\";end\""))
+       (full-path (append exec-path (split-string fish-path ":"))))
+    (setenv "PATH" fish-path)
+    (setq exec-path full-path))
+  ;; (setq exec-path-from-shell-shell-name "/opt/homebrew/bin/fish")
+  ;; (exec-path-from-shell-initialize)
+  )
 
 (use-package github-browse-file
   :custom (github-browse-file-show-line-at-point t))
@@ -757,6 +842,7 @@ Invoking with DO-NOT-STRIP-PREFIX copies the full path."
   :bind ("C-c M" . makefile-executor-execute-project-target))
 
 (use-package direnv
+  :commands direnv-mode
   :config (direnv-mode)
   :custom (direnv-always-show-summary nil))
 
@@ -775,18 +861,25 @@ Invoking with DO-NOT-STRIP-PREFIX copies the full path."
 (use-package fish-mode)
 
 (use-package agent-shell
+  :commands (agent-shell pt/agent-shell-other-window)
   :bind ("C-c A" . #'pt/agent-shell-other-window)
+  :custom
+  (agent-shell-anthropic-authentication
+   (agent-shell-anthropic-make-authentication :login t))
+  (agent-shell-anthropic-claude-command (list "runclaude-acp"))
   :config
   (defun pt/agent-shell-other-window ()
     (interactive)
-    (let ((win (split-window-right)))
+    (let ((win
+           (if (one-window-p)
+               (split-window-right)
+             (next-window (selected-window)))))
       (select-window win)
-      (call-interactively #'agent-shell)))
-  (setq agent-shell-anthropic-authentication
-        (agent-shell-anthropic-make-authentication :login t))
-  (setq agent-shell-anthropic-claude-command (list "runclaude-acp")))
+      (call-interactively #'agent-shell))))
 
 (use-package go-mode
+  :defines go-mode-map
+  :commands gofmt-before-save
   :custom (gofmt-command "goimports")
   :hook
   ((go-mode . eglot-ensure)
@@ -801,6 +894,7 @@ Invoking with DO-NOT-STRIP-PREFIX copies the full path."
       (gofmt-before-save))))
 
 (use-package gotest
+  :commands (go-test-current-test go-test-current-file go-import-add)
   :after go-mode
   :bind
   (:map
@@ -809,10 +903,13 @@ Invoking with DO-NOT-STRIP-PREFIX copies the full path."
    ("C-c a T" . #'go-test-current-file)
    ("C-c a i" . #'go-import-add)))
 
+(use-package cc-mode)
 (use-package swift-mode)
 (use-package protobuf-mode)
-(use-package terraform-mode :custom (terraform-format-on-save t))
+(use-package terraform-mode
+  :custom (terraform-format-on-save t))
 (use-package dockerfile-mode)
+(use-package docker-compose-mode)
 (use-package markdown-mode)
 (use-package web-mode)
 (use-package just-mode)
@@ -822,121 +919,112 @@ Invoking with DO-NOT-STRIP-PREFIX copies the full path."
 (use-package capnp-mode)
 (use-package flatbuffers-mode)
 (use-package haskell-mode
+  :defines (haskell-mode-map haskell-indentation-mode-map)
   :bind (:map haskell-mode-map ("," . modalka-mode))
   :bind (:map haskell-indentation-mode-map ("," . modalka-mode)))
 (use-package tide)
-(use-package flyover :hook (flymake-mode . flyover-mode))
 
-(use-packagetypescript-mode
- :hook (typescript-mode . typescript-ts-mode)
- :custom (typescript-indent-level 2)
- :config
- (defun pt/ts-hook ()
-   (eglot-ensure)
-   (setq-local enable-eglot-autoformat nil)
-   (setq-local tab-width 2)
-   (setq-local eglot-send-changes-idle-time 3))
- :hook (typescript-ts-mode . pt/ts-hook)
- :hook (js-ts-mode . pt/ts-hook))
+(use-package typescript-mode
+  :hook (typescript-mode . typescript-ts-mode)
+  :custom (typescript-indent-level 2)
+  :config
+  (defun pt/ts-hook ()
+    (eglot-ensure)
+    (setq-local enable-eglot-autoformat nil)
+    (setq-local tab-width 2)
+    (setq-local eglot-send-changes-idle-time 3))
+  :hook (typescript-ts-mode . pt/ts-hook)
+  :hook (js-ts-mode . pt/ts-hook))
 
 (add-hook 'js-mode-hook #'js-ts-mode)
 
-(defun just-consult ()
-  "Run a recipe from the Justfile associated with the current working directory."
-  (interactive)
-  (let* ((command-string (shell-command-to-string "just --summary"))
-         (all-commands (s-split " " (s-trim command-string)))
-         (recipe (completing-read "Justfile command:" all-commands)))
-    (unless recipe
-      (user-error "No command to run"))
-    (compile (format "just %s" recipe))))
+;; (defun just-consult ()
+;;   "Run a recipe from the Justfile associated with the current working directory."
+;;   (interactive)
+;;   (let* ((command-string (shell-command-to-string "just --summary"))
+;;          (all-commands (s-split " " (s-trim command-string)))
+;;          (recipe (completing-read "Justfile command:" all-commands)))
+;;     (unless recipe
+;;       (user-error "No command to run"))
+;;     (compile (format "just %s" recipe))))
 
-(use-package yaml-imenu :after yaml-mode :config (yaml-imenu-enable))
+(use-package yaml-imenu
+  :commands yaml-imenu-enable
+  :after yaml-mode
+  :config (yaml-imenu-enable))
 
-(use-packageflymake-yamllint
- :hook (yaml-mode . flymake-mode)
- :hook (yaml-mode . flymake-yamllint-setup))
+(use-package flymake-yamllint
+  :hook (yaml-mode . flymake-mode)
+  :hook (yaml-mode . flymake-yamllint-setup))
 
 (use-package verb)
 
-(use-packageorg
- :pin manual
- :hook (org-mode . flymake-mode-off)
- :bind
- (:map
-  org-mode-map ("C-c ;" . nil) ("C-c c" . pt/org-mode-insert-code))
- :bind ("C-c S" . org-store-link)
- :config
- (defun pt/org-mode-insert-code ()
-   "Like markdown-insert-code, but for org instead."
-   (interactive)
-   (org-emphasize ?~))
- :custom
- (org-special-ctrl-a t)
- (org-src-ask-before-returning-to-edit-buffer nil)
- (org-src-window-setup 'current-window))
+(use-package org
+  :commands (pt/org-mode-hook org-emphasize)
+  :pin manual
+  :hook (org-mode . #'pt/org-mode-hook)
+  :bind
+  (:map
+   org-mode-map ("C-c ;" . nil) ("C-c c" . pt/org-mode-insert-code))
+  :bind ("C-c S" . org-store-link)
+  :config
+  (defun pt/org-mode-hook ()
+    (flymake-mode -1))
+  (defun pt/org-mode-insert-code ()
+    "Like markdown-insert-code, but for org instead."
+    (interactive)
+    (org-emphasize ?~))
+  :custom
+  (org-special-ctrl-a t)
+  (org-src-ask-before-returning-to-edit-buffer nil)
+  (org-src-window-setup 'current-window))
 
 (use-package htmlize)
 
-(when (executable-find "opam")
-  (add-to-list
-   'load-path "/Users/patrick/.opam/default/share/emacs/site-lisp")
-  (require 'ocp-indent)
-  (autoload 'merlin-mode "merlin" nil t nil)
-  (add-hook 'tuareg-mode-hook 'merlin-mode t)
-  (add-hook 'caml-mode-hook 'merlin-mode t)
-  (setq merlin-command 'opam))
-
-(let ((opam-share
-       (ignore-errors
-         (car (process-lines "opam" "var" "share")))))
-  (when (and opam-share (file-directory-p opam-share))
-    ;; Register Merlin
-    (message (expand-file-name "emacs/site-lisp" opam-share))))
-
-(when (executable-find "sclang")
-  (push
-   "/Users/patrick/Library/Application Support/SuperCollider/downloaded-quarks/scel/el"
-   load-path)
-
-  (require 'sclang)
-
-  (push "/Users/patrick/src/pith" load-path)
-
-  (bind-key "C-<return>" #'sclang-eval-defun sclang-mode-map)
-  (setf sclang-show-workspace-on-startup nil)
-
-  (use-package tidal :bind (:map tidal-mode-map ("," . modalka-mode)))
-
-  (use-package real-auto-save
-    :hook (tidal-mode . real-auto-save-mode)
-    :custom (real-auto-save-interval 100))
-
-  (defun tidal-hush ()
-    "Stop all the patterns currently running."
-    (interactive)
-    (tidal-send-string "hush"))
-
-  (use-package emms)
-  (emms-all)
-  (require 'emms-setup)
-
-  (require 'pith)
-
-  (bind-key "C-x c" #'pith-dispatch)
-  (bind-key "C-<RET>" #'tidal-run-multiple-lines tidal-mode-map)
-
-  (setq
-   pith-workdir "/Users/patrick/tidal"
-   pith-sample-reload-command "~reload.value")
-
-  (bind-key "z" #'pith-play-file-at-dired-point dired-mode-map)
-
-  (define-emms-simple-player
-   afplay '(file)
-   (regexp-opt '(".mp3" ".m4a" ".aac" ".flac" ".wav")) "afplay")
-
-  (setq emms-player-list `(,emms-player-afplay)))
+;; (when (executable-find "sclang")
+;;   (push
+;;    "/Users/patrick/Library/Application Support/SuperCollider/downloaded-quarks/scel/el"
+;;    load-path)
+;;
+;;   (require 'sclang)
+;;
+;;   (push "/Users/patrick/src/pith" load-path)
+;;
+;;   (bind-key "C-<return>" #'sclang-eval-defun sclang-mode-map)
+;;   (setf sclang-show-wworkspace-on-startup nil)
+;;
+;;   (use-package tidal
+;;     :bind (:map tidal-mode-map ("," . modalka-mode)))
+;;
+;;   (use-package real-auto-save
+;;     :hook (tidal-mode . real-auto-save-mode)
+;;     :custom (real-auto-save-interval 100))
+;;
+;;   (defun tidal-hush ()
+;;     "Stop all the patterns currently running."
+;;     (interactive)
+;;     (tidal-send-string "hush"))
+;;
+;;   (use-package emms)
+;;   (emms-all)
+;;   (require 'emms-setup)
+;;
+;;   (require 'pith)
+;;
+;;   (bind-key "C-x c" #'pith-dispatch)
+;;   (bind-key "C-<RET>" #'tidal-run-multiple-lines tidal-mode-map)
+;;
+;;   (setq
+;;    pith-workdir "/Users/patrick/tidal"
+;;    pith-sample-reload-command "~reload.value")
+;;
+;;   (bind-key "z" #'pith-play-file-at-dired-point dired-mode-map)
+;;
+;;   (define-emms-simple-player
+;;    afplay '(file)
+;;    (regexp-opt '(".mp3" ".m4a" ".aac" ".flac" ".wav")) "afplay")
+;;
+;;   (setq emms-player-list `(,emms-player-afplay)))
 
 
 ;; Cobble-yourself-a-modal-editor. Works better than the giant hack
@@ -944,102 +1032,108 @@ Invoking with DO-NOT-STRIP-PREFIX copies the full path."
 ;; key, so there needs to be a little custom timer code so that
 ;; modalka can imitate how Devil treats the leader key when typing
 ;; a space after a comma.
-(use-packagemodalka
- :hook (prog-mode . modalka-mode)
- :hook (read-only-mode . modalka-mode)
- :hook (after-init . modalka-mode)
- :bind ("," . modalka-mode)
- :bind (:map c-mode-map ("," . modalka-mode))
- :bind (:map c-mode-base-map ("," . modalka-mode))
- :bind
- (:map
-  modalka-mode-map
-  ("," . pt/modalka-comma)
-  ("<SPC>" . pt/modalka-space)
-  ("<RET>" . pt/modalka-enter)
-  ("g" . pt/quit)
-  ("/" . pt/cape-modalka)
-  ("." . pt/quit)
-  ("q" . quit-window)
-  (";" . execute-extended-command))
- :custom
- (modalka-cursor-type 'hollow)
- (modalka-excluded-modes '(magit-mode magit-status-mode))
- :config
- (defun pt/quit ()
-   (interactive)
-   (ignore-errors
-     (exit-recursive-edit))
-   (modalka-mode -1)
-   (keyboard-quit))
- (defvar pt/last-hit-comma-at nil)
- (defun pt/modalka-advice (&optional _)
-   (setq pt/last-hit-comma-at (current-time)))
- (defun time-since-modalka-last-invoked ()
-   (time-subtract
-    (current-time) (or pt/last-hit-comma-at (current-time))))
- (advice-add 'modalka-mode :before #'pt/modalka-advice)
- (defun pt/modalka-comma ()
-   (interactive)
-   (let ((delta (time-since-modalka-last-invoked)))
-     (when (< (time-to-seconds delta) 2)
-       (insert ","))
-     (modalka-mode -1)))
- (defun pt/cape-modalka ()
-   (interactive)
-   (modalka-mode -1)
-   ;; Way uglier than it should be.
-   (setq unread-command-events
-         (mapcar
-          (lambda (e) `(t . ,e)) (listify-key-sequence (kbd "M-/")))))
- (defun pt/modalka-enter ()
-   (interactive)
-   (newline-and-indent)
-   (modalka-mode -1))
- (defun pt/modalka-space ()
-   (interactive)
-   (let ((delta (time-since-modalka-last-invoked)))
-     (when (< (time-to-seconds delta) 2)
-       (insert ", "))
-     (modalka-mode -1)))
- ;; The incongruities in the following reflect ~20 years of
- ;; brain-breakage induced by Emacs keybindings
- (modalka-define-kbd "a" "C-a")
- (modalka-define-kbd "b" "C-c b")
- (define-key modalka-mode-map "c" mode-specific-map)
- (modalka-define-kbd "C" "C-c c")
- (modalka-define-kbd "d" "C-d")
- (modalka-define-kbd "e" "C-e")
- (modalka-define-kbd "E" "C-c e")
- (modalka-define-kbd "f" "C-c f")
- (modalka-define-kbd "F" "C-c F")
- (modalka-define-kbd "G" "C-c g")
- (define-key modalka-mode-map "h" help-map)
- (modalka-define-kbd "H" "C-c h")
- (modalka-define-kbd "i" "C-c i")
- (modalka-define-kbd "I" "C-c I")
- (modalka-define-kbd "j" "C-c j")
- (modalka-define-kbd "J" "C-c J")
- (modalka-define-kbd "k" "C-k")
- (modalka-define-kbd "K" "C-c k")
- (modalka-define-kbd "l" "C-c l")
- (modalka-define-kbd "m" "C-c m")
- (modalka-define-kbd "M" "C-c M")
- (modalka-define-kbd "n" "C-n")
- (modalka-define-kbd "N" "C-c n")
- (modalka-define-kbd "o" "C-c o")
- (modalka-define-kbd "p" "C-p")
- ;; q?
- (modalka-define-kbd "r" "C-c r")
- (modalka-define-kbd "R" "C-c R")
- (modalka-define-kbd "s" "C-c s")
- (modalka-define-kbd "S" "C-x C-s")
- (modalka-define-kbd "t" "C-c t")
- (modalka-define-kbd "u" "C-c u")
- (define-key modalka-mode-map "v" vc-prefix-map)
- (define-key modalka-mode-map "x" ctl-x-map)
- (modalka-define-kbd "y" "C-c y")
- (modalka-define-kbd "z" "C-c z")
- (define-key modalka-mode-map "4" ctl-x-4-map)
- (modalka-define-kbd "`" "C-c `")
- (modalka-define-kbd "!" "M-&")) ; shell-command
+(use-package modalka
+  :commands modalka-define-kbd
+  :defines (modalka-mode-map)
+  :functions (time-since-modalka-last-invoked pt/modalka-advice)
+  :hook (prog-mode . modalka-mode)
+  :hook (read-only-mode . modalka-mode)
+  :hook (after-init . modalka-mode)
+  :bind ("," . modalka-mode)
+  :bind (:map c-mode-map ("," . modalka-mode))
+  :bind (:map c-mode-base-map ("," . modalka-mode))
+  :bind
+  (:map
+   modalka-mode-map
+   ("," . pt/modalka-comma)
+   ("<SPC>" . pt/modalka-space)
+   ("<RET>" . pt/modalka-enter)
+   ("g" . pt/quit)
+   ("/" . pt/cape-modalka)
+   ("." . pt/quit)
+   ("q" . quit-window)
+   (";" . execute-extended-command))
+  :custom
+  (modalka-cursor-type 'hollow)
+  (modalka-excluded-modes '(magit-mode magit-status-mode))
+  :config
+  (defun pt/quit ()
+    (interactive)
+    (ignore-errors
+      (exit-recursive-edit))
+    (modalka-mode -1)
+    (keyboard-quit))
+  (defvar pt/last-hit-comma-at nil)
+  (defun pt/modalka-advice (&optional _)
+    (setq pt/last-hit-comma-at (current-time)))
+  (defun time-since-modalka-last-invoked ()
+    (time-subtract
+     (current-time) (or pt/last-hit-comma-at (current-time))))
+  (advice-add 'modalka-mode :before #'pt/modalka-advice)
+  (defun pt/modalka-comma ()
+    (interactive)
+    (let ((delta (time-since-modalka-last-invoked)))
+      (when (< (time-to-seconds delta) 2)
+        (insert ","))
+      (modalka-mode -1)))
+  (defun pt/cape-modalka ()
+    (interactive)
+    (modalka-mode -1)
+    ;; Way uglier than it should be.
+    (setq unread-command-events
+          (mapcar
+           (lambda (e) `(t . ,e))
+           (listify-key-sequence (kbd "M-/")))))
+  (defun pt/modalka-enter ()
+    (interactive)
+    (newline-and-indent)
+    (modalka-mode -1))
+  (defun pt/modalka-space ()
+    (interactive)
+    (let ((delta (time-since-modalka-last-invoked)))
+      (when (< (time-to-seconds delta) 2)
+        (insert ", "))
+      (modalka-mode -1)))
+  ;; The incongruities in the following reflect ~20 years of
+  ;; brain-breakage induced by Emacs keybindings
+  (modalka-define-kbd "a" "C-a")
+  (modalka-define-kbd "b" "C-c b")
+  (define-key modalka-mode-map "c" mode-specific-map)
+  (modalka-define-kbd "C" "C-c c")
+  (modalka-define-kbd "d" "C-d")
+  (modalka-define-kbd "e" "C-e")
+  (modalka-define-kbd "E" "C-c e")
+  (modalka-define-kbd "f" "C-c f")
+  (modalka-define-kbd "F" "C-c F")
+  (modalka-define-kbd "G" "C-c g")
+  (define-key modalka-mode-map "h" help-map)
+  (modalka-define-kbd "H" "C-c h")
+  (modalka-define-kbd "i" "C-c i")
+  (modalka-define-kbd "I" "C-c I")
+  (modalka-define-kbd "j" "C-c j")
+  (modalka-define-kbd "J" "C-c J")
+  (modalka-define-kbd "k" "C-k")
+  (modalka-define-kbd "K" "C-c k")
+  (modalka-define-kbd "l" "C-c l")
+  (modalka-define-kbd "m" "C-c m")
+  (modalka-define-kbd "M" "C-c M")
+  (modalka-define-kbd "n" "C-n")
+  (modalka-define-kbd "N" "C-c n")
+  (modalka-define-kbd "o" "C-c o")
+  (modalka-define-kbd "p" "C-p")
+  ;; q?
+  (modalka-define-kbd "r" "C-c r")
+  (modalka-define-kbd "R" "C-c R")
+  (modalka-define-kbd "s" "C-c s")
+  (modalka-define-kbd "S" "C-x C-s")
+  (modalka-define-kbd "t" "C-c t")
+  (modalka-define-kbd "u" "C-c u")
+  (define-key modalka-mode-map "v" vc-prefix-map)
+  (define-key modalka-mode-map "x" ctl-x-map)
+  (modalka-define-kbd "y" "C-c y")
+  (modalka-define-kbd "z" "C-c z")
+  (define-key modalka-mode-map "4" ctl-x-4-map)
+  (modalka-define-kbd "`" "C-c `")
+  (modalka-define-kbd "!" "M-&")) ; shell-command
+
+(provide 'init)
